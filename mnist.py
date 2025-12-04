@@ -48,7 +48,7 @@ class TriadicPerceptron(nn.Module):
 # Hyperparameters
 batch_size = 64
 learning_rate = 1e-3
-epochs = 10
+epochs = 20
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
