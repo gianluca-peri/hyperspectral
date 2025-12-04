@@ -50,10 +50,10 @@ class SpectralTriadic(nn.Module):
         if self.bias:
             # Add bias neuron to input features
             self.phi = nn.Parameter(torch.Tensor(out_features, in_features + 1), requires_grad=train_eigenvectors)
-            self.l_in = nn.Parameter(torch.Tensor(in_features + 1, in_features + 1))
+            self.l_in = nn.Parameter(torch.Tensor(in_features + 1))
         else:
             self.phi = nn.Parameter(torch.Tensor(out_features, in_features), requires_grad=train_eigenvectors)
-            self.l_in = nn.Parameter(torch.Tensor(in_features, in_features))
+            self.l_in = nn.Parameter(torch.Tensor(in_features))
         
         self.l_out = nn.Parameter(torch.Tensor(out_features))
         self.phi_triadic = nn.Parameter(torch.Tensor(out_features, in_features, in_features), requires_grad=train_triadic_eigenvectors)
