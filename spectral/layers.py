@@ -76,9 +76,8 @@ class SpectralTriadic(nn.Module):
             input = torch.cat([input, ones], dim=1)
         
         # Linear weight
-        # w_kj = (l_jj - l_k) * phi_kj
-        l_in_diag = torch.diagonal(self.l_in)
-        weight_linear = (l_in_diag.unsqueeze(0) - self.l_out.unsqueeze(1)) * self.phi
+        # w_kj = (l_j - l_k) * phi_kj
+        weight_linear = (self.l_in.unsqueeze(0) - self.l_out.unsqueeze(1)) * self.phi
         out_linear = F.linear(input, weight_linear, bias=None)
         
         # Triadic weight
