@@ -45,6 +45,17 @@ class TriadicPerceptron(nn.Module):
         x = self.flatten(x)
         return self.layer(x)
 
+class TriadicPerceptronWithEigenvectors(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        # MNIST images are 28x28 = 784
+        self.layer = SpectralTriadic(784, 10, train_triadic_eigenvectors=True)
+
+    def forward(self, x):
+        x = self.flatten(x)
+        return self.layer(x)
+
 # Hyperparameters
 batch_size = 64
 learning_rate = 1e-3
@@ -174,3 +185,7 @@ train_and_evaluate(linear_model, "spectral_linear", run_dir, train_loader, val_l
 # Train Triadic Perceptron
 triadic_model = TriadicPerceptron().to(device)
 train_and_evaluate(triadic_model, "spectral_triadic", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
+
+# Train Triadic Perceptron with Eigenvectors
+triadic_eigen_model = TriadicPerceptronWithEigenvectors().to(device)
+train_and_evaluate(triadic_eigen_model, "spectral_triadic_eigenvectors", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
