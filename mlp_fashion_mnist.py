@@ -5,9 +5,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
-from spectral.layers import SpectralLinear, SpectralTriadic
+from spectral.layers import SpectralTriadic, SpectralTriadicOnly
 
-def get_run_dir(base_dir="mnist"):
+def get_run_dir(base_dir="mlp_fashion_mnist"):
     """
     Create a new run directory to save results.
     Returns the path to the new run directory.
@@ -23,49 +23,62 @@ def get_run_dir(base_dir="mnist"):
             return run_dir
         i += 1
 
-class DirectSpacePerceptron(nn.Module):
+class MLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
-        self.layer = nn.Linear(784, 10)
+        # Fashion MNIST images are 28x28 = 784
+        self.layer_1 = nn.Linear(784, 300)
+        self.layer_2 = nn.Linear(300, 10)
 
     def forward(self, x):
         x = self.flatten(x)
-        return self.layer(x)
+        x = self.layer_1(x)
+        return self.layer_2(x)
 
-class Perceptron(nn.Module):
+class NonLinearMLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
-        self.layer = SpectralLinear(784, 10)
+        # Fashion MNIST images are 28x28 = 784
+        self.layer_1 = nn.Linear(784, 300)
+        self.layer_2 = nn.Linear(300, 10)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
         x = self.flatten(x)
-        return self.layer(x)
+        x = self.relu(self.layer_1(x))
+        return self.layer_2(x)
 
-class TriadicPerceptron(nn.Module):
+class TriadicMLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
-        self.layer = SpectralTriadic(784, 10)
+        # Fashion MNIST images are 28x28 = 784
+        self.layer_1 = SpectralTriadic(784, 300)
+        self.layer_2 = SpectralTriadic(300, 10)
 
     def forward(self, x):
         x = self.flatten(x)
-        return self.layer(x)
-
-class TriadicPerceptronWithEigenvectors(nn.Module):
+        x = self.layer_1(x)
+        return self.layer_2(x)
+    
+class TriadicNonLinearMLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
-        self.layer = SpectralTriadic(784, 10, train_triadic_eigenvectors=True)
+        # Fashion MNIST images are 28x28 = 784
+        self.triadic_layer_1 = SpectralTriadicOnly(784, 300)
+        self.triadic_layer_2 = SpectralTriadicOnly(300, 10)
+        self.binary_layer_1 = nn.Linear(784, 300)
+        self.binary_layer_2 = nn.Linear(300, 10)
+        self.relu = nn.ReLU()
 
     def forward(self, x):
         x = self.flatten(x)
-        return self.layer(x)
+        x = self.relu(self.binary_layer_1(x) + self.triadic_layer_1(x))
+        return self.binary_layer_2(x) + self.triadic_layer_2(x)
+
 
 # Hyperparameters
 batch_size = 64
@@ -79,11 +92,11 @@ print(f"Using device: {device}")
 # Data loading
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
+    transforms.Normalize((0.2860,), (0.3530,))
 ])
 
-full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+full_train_dataset = datasets.FashionMNIST(root='./data', train=True, download=True, transform=transform)
+test_dataset = datasets.FashionMNIST(root='./data', train=False, download=True, transform=transform)
 
 # Split train into train and validation (e.g., 50000 train, 10000 val)
 train_size = 50000
@@ -189,18 +202,18 @@ def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader, tes
 run_dir = get_run_dir()
 print(f"Saving results to {run_dir}")
 
-# Train Linear Direct-Space Perceptron
-direct_model = DirectSpacePerceptron().to(device)
-train_and_evaluate(direct_model, "direct_linear", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
+# Train and evaluate MLP
+mlp_model = MLP().to(device)
+train_and_evaluate(mlp_model, "mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
 
-# Train Linear Perceptron
-linear_model = Perceptron().to(device)
-train_and_evaluate(linear_model, "spectral_linear", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
+# Train and evaluate Non-Linear MLP
+nonlinear_mlp_model = NonLinearMLP().to(device)
+train_and_evaluate(nonlinear_mlp_model, "nonlinear_mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
 
-# Train Triadic Perceptron
-triadic_model = TriadicPerceptron().to(device)
-train_and_evaluate(triadic_model, "spectral_triadic", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
+# Train and evaluate Triadic MLP
+triadic_mlp_model = TriadicMLP().to(device)
+train_and_evaluate(triadic_mlp_model, "triadic_mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
 
-# Train Triadic Perceptron with Eigenvectors
-triadic_eigen_model = TriadicPerceptronWithEigenvectors().to(device)
-train_and_evaluate(triadic_eigen_model, "spectral_triadic_eigenvectors", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
+# Train and evaluate Triadic Non-Linear MLP
+triadic_nonlinear_mlp_model = TriadicNonLinearMLP().to(device)
+train_and_evaluate(triadic_nonlinear_mlp_model, "triadic_nonlinear_mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)

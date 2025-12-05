@@ -10,7 +10,7 @@ def load_history(file_path):
     with open(file_path, 'r') as f:
         return json.load(f)
 
-def get_all_runs(base_dir="mnist"):
+def get_all_runs(base_dir="xor"):
     runs = []
     if not os.path.exists(base_dir):
         return runs
@@ -71,7 +71,7 @@ def plot_metric(ax, model_data, metric_name, label, marker, color):
     ax.fill_between(epochs, mean - sem, mean + sem, alpha=0.2, color=color)
 
 def main():
-    base_dir = "mnist"
+    base_dir = "xor"
     runs = get_all_runs(base_dir)
     print(f"Found {len(runs)} runs: {runs}")
     
@@ -109,7 +109,7 @@ def main():
     ax2.grid(True)
 
     # Save plot
-    output_path = os.path.join(base_dir, "simple_graph.mnist.png")
+    output_path = os.path.join(base_dir, "simple_graph.xor.png")
     plt.tight_layout()
     plt.savefig(output_path)
     print(f"Plot saved to {output_path}")

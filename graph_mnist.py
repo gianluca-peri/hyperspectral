@@ -10,7 +10,7 @@ def load_history(file_path):
         return json.load(f)
 
 def main():
-    run_dir = "mnist/run_0"
+    run_dir = "mnist/run_1"
     linear_path = os.path.join(run_dir, "spectral_linear", "history.json")
     triadic_path = os.path.join(run_dir, "spectral_triadic", "history.json")
     triadic_eigen_path = os.path.join(run_dir, "spectral_triadic_eigenvectors", "history.json")

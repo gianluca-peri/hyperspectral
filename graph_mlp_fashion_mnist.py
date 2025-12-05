@@ -10,7 +10,7 @@ def load_history(file_path):
     with open(file_path, 'r') as f:
         return json.load(f)
 
-def get_all_runs(base_dir="mnist"):
+def get_all_runs(base_dir="mlp_fashion_mnist"):
     runs = []
     if not os.path.exists(base_dir):
         return runs
@@ -23,24 +23,22 @@ def get_all_runs(base_dir="mnist"):
 
 def aggregate_data(runs):
     # Structure: model_name -> metric -> list of lists (epochs)
-    aggregated = {
-        "direct_linear": {"train_loss": [], "val_accuracy": []},
-        "spectral_triadic": {"train_loss": [], "val_accuracy": []}
-    }
+    models = ["mlp", "nonlinear_mlp", "triadic_mlp", "triadic_nonlinear_mlp"]
+    metrics = ["train_loss", "val_loss", "val_accuracy"]
+    
+    aggregated = {model: {metric: [] for metric in metrics} for model in models}
     
     for run_dir in runs:
-        direct_path = os.path.join(run_dir, "direct_linear", "history.json")
-        triadic_path = os.path.join(run_dir, "spectral_triadic", "history.json")
-        
-        if os.path.exists(direct_path):
-            data = load_history(direct_path)
-            aggregated["direct_linear"]["train_loss"].append(data["train_loss"])
-            aggregated["direct_linear"]["val_accuracy"].append(data["val_accuracy"])
-            
-        if os.path.exists(triadic_path):
-            data = load_history(triadic_path)
-            aggregated["spectral_triadic"]["train_loss"].append(data["train_loss"])
-            aggregated["spectral_triadic"]["val_accuracy"].append(data["val_accuracy"])
+        for model in models:
+            history_path = os.path.join(run_dir, model, "history.json")
+            if os.path.exists(history_path):
+                try:
+                    data = load_history(history_path)
+                    for metric in metrics:
+                        if metric in data:
+                            aggregated[model][metric].append(data[metric])
+                except Exception as e:
+                    print(f"Error loading {history_path}: {e}")
             
     return aggregated
 
@@ -49,7 +47,6 @@ def plot_metric(ax, model_data, metric_name, label, marker, color):
         return
         
     # Convert to numpy array: shape (n_runs, n_epochs)
-    # Note: assumes all runs have same number of epochs.
     try:
         data_matrix = np.array(model_data[metric_name])
     except ValueError:
@@ -71,26 +68,31 @@ def plot_metric(ax, model_data, metric_name, label, marker, color):
     ax.fill_between(epochs, mean - sem, mean + sem, alpha=0.2, color=color)
 
 def main():
-    base_dir = "mnist"
+    base_dir = "mlp_fashion_mnist"
     runs = get_all_runs(base_dir)
     print(f"Found {len(runs)} runs: {runs}")
     
     if not runs:
-        print("No runs found.")
+        print(f"No runs found in {base_dir}.")
         return
 
     data = aggregate_data(runs)
 
     # Create plot
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(21, 6))
+    plt.suptitle('MLP Models on Fashion MNIST (Mean ± SEM)')
 
-    # Colors
-    c_linear = 'tab:blue'
-    c_triadic = 'tab:orange'
+    # Define styles
+    styles = {
+        "mlp": {"label": "MLP", "marker": "o", "color": "tab:blue"},
+        "nonlinear_mlp": {"label": "Non-Linear MLP", "marker": "s", "color": "tab:orange"},
+        "triadic_mlp": {"label": "Triadic MLP", "marker": "^", "color": "tab:green"},
+        "triadic_nonlinear_mlp": {"label": "Triadic Non-Linear MLP", "marker": "D", "color": "tab:red"}
+    }
 
     # Plot Train Loss
-    plot_metric(ax1, data["direct_linear"], "train_loss", "Direct Linear", "o", c_linear)
-    plot_metric(ax1, data["spectral_triadic"], "train_loss", "Spectral Triadic", "^", c_triadic)
+    for model, style in styles.items():
+        plot_metric(ax1, data[model], "train_loss", style["label"], style["marker"], style["color"])
     
     ax1.set_title('Training Loss')
     ax1.set_xlabel('Epoch')
@@ -98,18 +100,28 @@ def main():
     ax1.legend()
     ax1.grid(True)
 
-    # Plot Validation Accuracy
-    plot_metric(ax2, data["direct_linear"], "val_accuracy", "Direct Linear", "o", c_linear)
-    plot_metric(ax2, data["spectral_triadic"], "val_accuracy", "Spectral Triadic", "^", c_triadic)
+    # Plot Validation Loss
+    for model, style in styles.items():
+        plot_metric(ax2, data[model], "val_loss", style["label"], style["marker"], style["color"])
     
-    ax2.set_title('Validation Accuracy')
+    ax2.set_title('Validation Loss')
     ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Accuracy (%)')
+    ax2.set_ylabel('Loss')
     ax2.legend()
     ax2.grid(True)
 
+    # Plot Validation Accuracy
+    for model, style in styles.items():
+        plot_metric(ax3, data[model], "val_accuracy", style["label"], style["marker"], style["color"])
+    
+    ax3.set_title('Validation Accuracy')
+    ax3.set_xlabel('Epoch')
+    ax3.set_ylabel('Accuracy (%)')
+    ax3.legend()
+    ax3.grid(True)
+
     # Save plot
-    output_path = os.path.join(base_dir, "simple_graph.mnist.png")
+    output_path = os.path.join(base_dir, "graph.mlp_fashion_mnist.png")
     plt.tight_layout()
     plt.savefig(output_path)
     print(f"Plot saved to {output_path}")

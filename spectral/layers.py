@@ -91,3 +91,31 @@ class SpectralTriadic(nn.Module):
         out_triadic = torch.einsum('bi,bj,kij->bk', input, input, weight_triadic)
         
         return out_linear + out_triadic
+
+class SpectralTriadicOnly(nn.Module):
+    def __init__(self, in_features, out_features, train_triadic_eigenvectors=False):
+        super(SpectralTriadicOnly, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        
+        self.phi_triadic = nn.Parameter(torch.Tensor(out_features, in_features, in_features), requires_grad=train_triadic_eigenvectors)
+        self.l_in_triadic = nn.Parameter(torch.Tensor(in_features, in_features))
+        self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
+            
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        nn.init.xavier_uniform_(self.phi_triadic.view(self.out_features, -1))
+        nn.init.uniform_(self.l_in_triadic, -1, 1)
+        nn.init.uniform_(self.l_out_triadic, -1, 1)
+
+    def forward(self, input):
+        
+        # Triadic weight
+        # w_kij = (L_ij - L_k) * phi_kij
+        weight_triadic = (self.l_in_triadic.unsqueeze(0) - self.l_out_triadic.unsqueeze(1).unsqueeze(2)) * self.phi_triadic
+        
+        # Compute bilinear term: sum_ij w_kij * x_i * x_j
+        out_triadic = torch.einsum('bi,bj,kij->bk', input, input, weight_triadic)
+        
+        return out_triadic
