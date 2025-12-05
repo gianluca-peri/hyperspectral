@@ -105,6 +105,9 @@ def main():
     # Plot Validation Accuracy (ax2 instead of ax3)
     for model, style in styles.items():
         plot_metric(ax2, data[model], "val_accuracy", style["label"], style["marker"], style["color"])
+
+    # Plot horizontal axline for human accuracy performance
+    ax2.axhline(y=83.5, color='r', linestyle='--', label='Human Performance')
     
     ax2.set_title('Validation Accuracy')
     ax2.set_xlabel('Epoch')
