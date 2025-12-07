@@ -56,9 +56,16 @@ class SpectralTriadic(nn.Module):
             self.l_in = nn.Parameter(torch.Tensor(in_features))
         
         self.l_out = nn.Parameter(torch.Tensor(out_features))
-        self.phi_triadic = nn.Parameter(torch.Tensor(out_features, in_features, in_features), requires_grad=train_triadic_eigenvectors)
-        self.l_in_triadic = nn.Parameter(torch.Tensor(in_features, in_features))
+        
+        # Triadic parameters
+        num_pairs = in_features * (in_features - 1) // 2
+        self.phi_triadic = nn.Parameter(torch.Tensor(out_features, num_pairs), requires_grad=train_triadic_eigenvectors)
+        self.l_in_triadic = nn.Parameter(torch.Tensor(num_pairs))
         self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
+        
+        indices = torch.triu_indices(in_features, in_features, offset=1)
+        self.register_buffer('triu_rows', indices[0])
+        self.register_buffer('triu_cols', indices[1])
             
         self.initialize_parameters()
 
@@ -66,29 +73,32 @@ class SpectralTriadic(nn.Module):
         nn.init.xavier_uniform_(self.phi)
         nn.init.uniform_(self.l_in, -1, 1)
         nn.init.uniform_(self.l_out, -1, 1)
-        nn.init.xavier_uniform_(self.phi_triadic.view(self.out_features, -1))
+        nn.init.xavier_uniform_(self.phi_triadic)
         nn.init.uniform_(self.l_in_triadic, -1, 1)
         nn.init.uniform_(self.l_out_triadic, -1, 1)
 
     def forward(self, input):
         if self.bias:
             ones = torch.ones(input.size(0), 1, device=input.device)
-            input = torch.cat([input, ones], dim=1)
+            input_linear = torch.cat([input, ones], dim=1)
+        else:
+            input_linear = input
         
         # Linear weight
         # w_kj = (l_j - l_k) * phi_kj
         weight_linear = (self.l_in.unsqueeze(0) - self.l_out.unsqueeze(1)) * self.phi
-        out_linear = F.linear(input, weight_linear, bias=None)
+        out_linear = F.linear(input_linear, weight_linear, bias=None)
         
         # Triadic weight
         # w_kij = (L_ij - L_k) * phi_kij
-        weight_triadic = (self.l_in_triadic.unsqueeze(0) - self.l_out_triadic.unsqueeze(1).unsqueeze(2)) * self.phi_triadic
+        weight_triadic = (self.l_in_triadic.unsqueeze(0) - self.l_out_triadic.unsqueeze(1)) * self.phi_triadic
         
-        # Compute bilinear term: sum_ij w_kij * x_i * x_j
-        if self.bias:
-            # Exclude bias neuron from triadic computation
-            input = input[:, :-1]
-        out_triadic = torch.einsum('bi,bj,kij->bk', input, input, weight_triadic)
+        # Compute bilinear term: sum_{j>i} w_kij * x_i * x_j
+        x_i = input[:, self.triu_rows]
+        x_j = input[:, self.triu_cols]
+        x_pairs = x_i * x_j
+        
+        out_triadic = F.linear(x_pairs, weight_triadic, bias=None)
         
         return out_linear + out_triadic
 
@@ -98,14 +108,19 @@ class SpectralTriadicOnly(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         
-        self.phi_triadic = nn.Parameter(torch.Tensor(out_features, in_features, in_features), requires_grad=train_triadic_eigenvectors)
-        self.l_in_triadic = nn.Parameter(torch.Tensor(in_features, in_features))
+        num_pairs = in_features * (in_features - 1) // 2
+        self.phi_triadic = nn.Parameter(torch.Tensor(out_features, num_pairs), requires_grad=train_triadic_eigenvectors)
+        self.l_in_triadic = nn.Parameter(torch.Tensor(num_pairs))
         self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
+        
+        indices = torch.triu_indices(in_features, in_features, offset=1)
+        self.register_buffer('triu_rows', indices[0])
+        self.register_buffer('triu_cols', indices[1])
             
         self.initialize_parameters()
 
     def initialize_parameters(self):
-        nn.init.xavier_uniform_(self.phi_triadic.view(self.out_features, -1))
+        nn.init.xavier_uniform_(self.phi_triadic)
         nn.init.uniform_(self.l_in_triadic, -1, 1)
         nn.init.uniform_(self.l_out_triadic, -1, 1)
 
@@ -113,9 +128,13 @@ class SpectralTriadicOnly(nn.Module):
         
         # Triadic weight
         # w_kij = (L_ij - L_k) * phi_kij
-        weight_triadic = (self.l_in_triadic.unsqueeze(0) - self.l_out_triadic.unsqueeze(1).unsqueeze(2)) * self.phi_triadic
+        weight_triadic = (self.l_in_triadic.unsqueeze(0) - self.l_out_triadic.unsqueeze(1)) * self.phi_triadic
         
-        # Compute bilinear term: sum_ij w_kij * x_i * x_j
-        out_triadic = torch.einsum('bi,bj,kij->bk', input, input, weight_triadic)
+        # Compute bilinear term: sum_{j>i} w_kij * x_i * x_j
+        x_i = input[:, self.triu_rows]
+        x_j = input[:, self.triu_cols]
+        x_pairs = x_i * x_j
+        
+        out_triadic = F.linear(x_pairs, weight_triadic, bias=None)
         
         return out_triadic
