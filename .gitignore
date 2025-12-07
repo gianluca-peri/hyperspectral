@@ -3,3 +3,4 @@ xor/
 mnist/
 mlp_fashion_mnist/
 spectral/__pycache__/
+scaling_comparison.png

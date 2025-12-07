@@ -63,6 +63,11 @@ class SpectralTriadic(nn.Module):
         self.l_in_triadic = nn.Parameter(torch.Tensor(num_pairs))
         self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
         
+        # Register upper triangular indices for triadic interactions
+        # We use register_buffer to store these indices as they are not parameters
+        # but must be on the same device as the module
+        # Note that torch.triu_indices in practice does the lexicographical ordering
+        # with the i' being the column number!
         indices = torch.triu_indices(in_features, in_features, offset=1)
         self.register_buffer('triu_rows', indices[0])
         self.register_buffer('triu_cols', indices[1])
@@ -113,6 +118,11 @@ class SpectralTriadicOnly(nn.Module):
         self.l_in_triadic = nn.Parameter(torch.Tensor(num_pairs))
         self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
         
+        # Register upper triangular indices for triadic interactions
+        # We use register_buffer to store these indices as they are not parameters
+        # but must be on the same device as the module
+        # Note that torch.triu_indices in practice does the lexicographical ordering
+        # with the i' being the column number!
         indices = torch.triu_indices(in_features, in_features, offset=1)
         self.register_buffer('triu_rows', indices[0])
         self.register_buffer('triu_cols', indices[1])
