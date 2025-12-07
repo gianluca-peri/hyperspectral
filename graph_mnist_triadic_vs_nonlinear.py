@@ -10,7 +10,7 @@ def load_history(file_path):
     with open(file_path, 'r') as f:
         return json.load(f)
 
-def get_all_runs(base_dir="mlp_fashion_mnist"):
+def get_all_runs(base_dir="mnist"):
     runs = []
     if not os.path.exists(base_dir):
         return runs
@@ -23,25 +23,24 @@ def get_all_runs(base_dir="mlp_fashion_mnist"):
 
 def aggregate_data(runs):
     # Structure: model_name -> metric -> list of lists (epochs)
-    # Excluded "triadic_nonlinear_mlp"
-    models = ["mlp", "nonlinear_mlp", "triadic_mlp"]
-    # Excluded "val_loss" from metrics we care about plotting, though we can still load it if we want.
-    # But to be simple, let's just load what we need.
-    metrics = ["train_loss", "val_accuracy"]
-    
-    aggregated = {model: {metric: [] for metric in metrics} for model in models}
+    aggregated = {
+        "nonlinear_mlp": {"train_loss": [], "val_accuracy": []},
+        "spectral_triadic": {"train_loss": [], "val_accuracy": []}
+    }
     
     for run_dir in runs:
-        for model in models:
-            history_path = os.path.join(run_dir, model, "history.json")
-            if os.path.exists(history_path):
-                try:
-                    data = load_history(history_path)
-                    for metric in metrics:
-                        if metric in data:
-                            aggregated[model][metric].append(data[metric])
-                except Exception as e:
-                    print(f"Error loading {history_path}: {e}")
+        nonlinear_path = os.path.join(run_dir, "nonlinear_mlp", "history.json")
+        triadic_path = os.path.join(run_dir, "spectral_triadic", "history.json")
+        
+        if os.path.exists(nonlinear_path):
+            data = load_history(nonlinear_path)
+            aggregated["nonlinear_mlp"]["train_loss"].append(data["train_loss"])
+            aggregated["nonlinear_mlp"]["val_accuracy"].append(data["val_accuracy"])
+            
+        if os.path.exists(triadic_path):
+            data = load_history(triadic_path)
+            aggregated["spectral_triadic"]["train_loss"].append(data["train_loss"])
+            aggregated["spectral_triadic"]["val_accuracy"].append(data["val_accuracy"])
             
     return aggregated
 
@@ -50,6 +49,7 @@ def plot_metric(ax, model_data, metric_name, label, marker, color):
         return
         
     # Convert to numpy array: shape (n_runs, n_epochs)
+    # Note: assumes all runs have same number of epochs.
     try:
         data_matrix = np.array(model_data[metric_name])
     except ValueError:
@@ -71,29 +71,26 @@ def plot_metric(ax, model_data, metric_name, label, marker, color):
     ax.fill_between(epochs, mean - sem, mean + sem, alpha=0.2, color=color)
 
 def main():
-    base_dir = "mlp_fashion_mnist"
+    base_dir = "mnist"
     runs = get_all_runs(base_dir)
     print(f"Found {len(runs)} runs: {runs}")
     
     if not runs:
-        print(f"No runs found in {base_dir}.")
+        print("No runs found.")
         return
 
     data = aggregate_data(runs)
 
-    # Create plot - 2 subplots instead of 3
+    # Create plot
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Define styles - Excluded triadic_nonlinear_mlp
-    styles = {
-        "mlp": {"label": "MLP", "marker": "o", "color": "tab:blue"},
-        "nonlinear_mlp": {"label": "Non-Linear MLP", "marker": "s", "color": "tab:orange"},
-        "triadic_mlp": {"label": "Triadic MLP", "marker": "^", "color": "tab:green"}
-    }
+    # Colors
+    c_nonlinear = 'tab:blue'
+    c_triadic = 'tab:orange'
 
     # Plot Train Loss
-    for model, style in styles.items():
-        plot_metric(ax1, data[model], "train_loss", style["label"], style["marker"], style["color"])
+    plot_metric(ax1, data["nonlinear_mlp"], "train_loss", "Non-Linear MLP", "o", c_nonlinear)
+    plot_metric(ax1, data["spectral_triadic"], "train_loss", "Spectral Triadic", "^", c_triadic)
     
     ax1.set_title('Training Loss')
     ax1.set_xlabel('Epoch')
@@ -101,12 +98,9 @@ def main():
     ax1.legend()
     ax1.grid(True)
 
-    # Plot Validation Accuracy (ax2 instead of ax3)
-    for model, style in styles.items():
-        plot_metric(ax2, data[model], "val_accuracy", style["label"], style["marker"], style["color"])
-
-    # Plot horizontal axline for human accuracy performance
-    ax2.axhline(y=83.5, color='r', linestyle='--', label='Human Performance')
+    # Plot Validation Accuracy
+    plot_metric(ax2, data["nonlinear_mlp"], "val_accuracy", "Non-Linear MLP", "o", c_nonlinear)
+    plot_metric(ax2, data["spectral_triadic"], "val_accuracy", "Spectral Triadic", "^", c_triadic)
     
     ax2.set_title('Validation Accuracy')
     ax2.set_xlabel('Epoch')
@@ -115,7 +109,7 @@ def main():
     ax2.grid(True)
 
     # Save plot
-    output_path = os.path.join(base_dir, "simple_graph.mlp_fashion_mnist.png")
+    output_path = os.path.join(base_dir, "graph_triadic_vs_nonlinear.png")
     plt.tight_layout()
     plt.savefig(output_path)
     print(f"Plot saved to {output_path}")

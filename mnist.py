@@ -67,6 +67,20 @@ class TriadicPerceptronWithEigenvectors(nn.Module):
         x = self.flatten(x)
         return self.layer(x)
 
+class NonLinearMLP(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        # Fashion MNIST images are 28x28 = 784
+        self.layer_1 = nn.Linear(784, 1000)
+        self.layer_2 = nn.Linear(1000, 10)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = self.flatten(x)
+        x = self.relu(self.layer_1(x))
+        return self.layer_2(x)
+
 # Hyperparameters
 batch_size = 64
 learning_rate = 1e-3
@@ -204,3 +218,7 @@ train_and_evaluate(triadic_model, "spectral_triadic", run_dir, train_loader, val
 # Train Triadic Perceptron with Eigenvectors
 triadic_eigen_model = TriadicPerceptronWithEigenvectors().to(device)
 train_and_evaluate(triadic_eigen_model, "spectral_triadic_eigenvectors", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
+
+# Train Non-Linear MLP
+nonlinear_mlp_model = NonLinearMLP().to(device)
+train_and_evaluate(nonlinear_mlp_model, "nonlinear_mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)

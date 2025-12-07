@@ -4,3 +4,4 @@ mnist/
 mlp_fashion_mnist/
 spectral/__pycache__/
 scaling_comparison.png
+comparison_2n2.png
