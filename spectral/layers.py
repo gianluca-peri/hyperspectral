@@ -58,7 +58,7 @@ class SpectralTriadic(nn.Module):
         self.l_out = nn.Parameter(torch.Tensor(out_features))
         
         # Triadic parameters
-        num_pairs = in_features * (in_features - 1) // 2
+        num_pairs = in_features * (in_features - 1) // 2 # Binomial(in_features, 2)
         self.phi_triadic = nn.Parameter(torch.Tensor(out_features, num_pairs), requires_grad=train_triadic_eigenvectors)
         self.l_in_triadic = nn.Parameter(torch.Tensor(num_pairs))
         self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
@@ -113,7 +113,7 @@ class SpectralTriadicOnly(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         
-        num_pairs = in_features * (in_features - 1) // 2
+        num_pairs = in_features * (in_features - 1) // 2 # Binomial(in_features, 2)
         self.phi_triadic = nn.Parameter(torch.Tensor(out_features, num_pairs), requires_grad=train_triadic_eigenvectors)
         self.l_in_triadic = nn.Parameter(torch.Tensor(num_pairs))
         self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
