@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
-from spectral.layers import SpectralLinear, SpectralTriadic
+from spectral.layers import SpectralLinear, SpectralTriadic, DirectSpaceTriadic
 
 def get_run_dir(base_dir="mnist"):
     """
@@ -51,6 +51,17 @@ class TriadicPerceptron(nn.Module):
         self.flatten = nn.Flatten()
         # MNIST images are 28x28 = 784
         self.layer = SpectralTriadic(784, 10)
+
+    def forward(self, x):
+        x = self.flatten(x)
+        return self.layer(x)
+    
+class DirectSpaceTriadicPerceptron(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        # MNIST images are 28x28 = 784
+        self.layer = DirectSpaceTriadic(784, 10)
 
     def forward(self, x):
         x = self.flatten(x)
@@ -121,6 +132,7 @@ def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader, tes
         "train_loss": [],
         "val_loss": [],
         "val_accuracy": [],
+        "val_avg_confidence": [],
         "test_accuracy": 0.0,
         "test_loss": 0.0
     }
@@ -146,6 +158,7 @@ def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader, tes
         val_loss = 0.0
         correct = 0
         total = 0
+        total_confidence = 0.0
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
@@ -153,18 +166,25 @@ def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader, tes
                 loss = criterion(outputs, labels)
                 val_loss += loss.item()
                 
-                _, predicted = torch.max(outputs.data, 1)
+                # Calculate probabilities using softmax
+                probs = torch.softmax(outputs, dim=1)
+                # Get the highest probability (confidence) and the predicted class
+                confidence, predicted = torch.max(probs, 1)
+                
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
+                total_confidence += confidence.sum().item()
         
         avg_val_loss = val_loss / len(val_loader)
         val_acc = 100 * correct / total
+        avg_val_confidence = total_confidence / total
         
-        print(f"[{model_name}] Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+        print(f"[{model_name}] Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.2f}%, Val Avg Conf: {avg_val_confidence:.4f}")
         
         history["train_loss"].append(avg_train_loss)
         history["val_loss"].append(avg_val_loss)
         history["val_accuracy"].append(val_acc)
+        history["val_avg_confidence"].append(avg_val_confidence)
         
         # Save per epoch
         with open(os.path.join(model_dir, "history.json"), "w") as f:
@@ -222,3 +242,7 @@ train_and_evaluate(triadic_eigen_model, "spectral_triadic_eigenvectors", run_dir
 # Train Non-Linear MLP
 nonlinear_mlp_model = NonLinearMLP().to(device)
 train_and_evaluate(nonlinear_mlp_model, "nonlinear_mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
+
+# Train Direct-Space Triadic Perceptron
+direct_triadic_model = DirectSpaceTriadicPerceptron().to(device)
+train_and_evaluate(direct_triadic_model, "direct_space_triadic", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
