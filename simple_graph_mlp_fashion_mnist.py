@@ -87,8 +87,8 @@ def main():
     # Define styles - Excluded triadic_nonlinear_mlp
     styles = {
         "mlp": {"label": "MLP", "marker": "o", "color": "tab:blue"},
-        "nonlinear_mlp": {"label": "Non-Linear MLP", "marker": "s", "color": "tab:orange"},
-        "triadic_mlp": {"label": "Triadic MLP", "marker": "^", "color": "tab:green"}
+        "nonlinear_mlp": {"label": "Non-Linear MLP", "marker": "s", "color": "tab:green"},
+        "triadic_mlp": {"label": "Triadic MLP", "marker": "^", "color": "tab:orange"}
     }
 
     # Plot Train Loss
@@ -115,7 +115,7 @@ def main():
     ax2.grid(True)
 
     # Save plot
-    output_path = os.path.join(base_dir, "simple_graph.mlp_fashion_mnist.png")
+    output_path = os.path.join(base_dir, "simple_graph_mlp_fashion_mnist.png")
     plt.tight_layout()
     plt.savefig(output_path)
     print(f"Plot saved to {output_path}")
