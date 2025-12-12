@@ -11,7 +11,7 @@ N = np.linspace(1, 20, 100)
 # Define the functions
 y1 = N**2
 y2 = N**2 + N**3
-y3 = N**2 + binom(N, 2) + N
+y3 = N**2 + binom(N, 2) + 2*N
 
 # Create the plot
 plt.figure(figsize=(10, 6))

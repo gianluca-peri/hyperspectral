@@ -23,23 +23,12 @@ def get_run_dir(base_dir="mnist"):
             return run_dir
         i += 1
 
-class DirectSpacePerceptron(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
-        self.layer = nn.Linear(784, 10)
-
-    def forward(self, x):
-        x = self.flatten(x)
-        return self.layer(x)
-
 class Perceptron(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
         # MNIST images are 28x28 = 784
-        self.layer = SpectralLinear(784, 10)
+        self.layer = nn.Linear(784, 10)
 
     def forward(self, x):
         x = self.flatten(x)
@@ -66,31 +55,6 @@ class DirectSpaceTriadicPerceptron(nn.Module):
     def forward(self, x):
         x = self.flatten(x)
         return self.layer(x)
-
-class TriadicPerceptronWithEigenvectors(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
-        self.layer = SpectralTriadic(784, 10, train_triadic_eigenvectors=True)
-
-    def forward(self, x):
-        x = self.flatten(x)
-        return self.layer(x)
-
-class NonLinearMLP(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        # Fashion MNIST images are 28x28 = 784
-        self.layer_1 = nn.Linear(784, 1000)
-        self.layer_2 = nn.Linear(1000, 10)
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        x = self.flatten(x)
-        x = self.relu(self.layer_1(x))
-        return self.layer_2(x)
 
 # Hyperparameters
 batch_size = 64
@@ -224,24 +188,12 @@ run_dir = get_run_dir()
 print(f"Saving results to {run_dir}")
 
 # Train Linear Direct-Space Perceptron
-direct_model = DirectSpacePerceptron().to(device)
+direct_model = Perceptron().to(device)
 train_and_evaluate(direct_model, "direct_linear", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
-
-# Train Linear Perceptron
-linear_model = Perceptron().to(device)
-train_and_evaluate(linear_model, "spectral_linear", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
 
 # Train Triadic Perceptron
 triadic_model = TriadicPerceptron().to(device)
 train_and_evaluate(triadic_model, "spectral_triadic", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
-
-# Train Triadic Perceptron with Eigenvectors
-triadic_eigen_model = TriadicPerceptronWithEigenvectors().to(device)
-train_and_evaluate(triadic_eigen_model, "spectral_triadic_eigenvectors", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
-
-# Train Non-Linear MLP
-nonlinear_mlp_model = NonLinearMLP().to(device)
-train_and_evaluate(nonlinear_mlp_model, "nonlinear_mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate)
 
 # Train Direct-Space Triadic Perceptron
 direct_triadic_model = DirectSpaceTriadicPerceptron().to(device)

@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -58,7 +57,7 @@ class SpectralTriadic(nn.Module):
         self.l_out = nn.Parameter(torch.Tensor(out_features))
         
         # Triadic parameters
-        num_pairs = in_features * (in_features - 1) // 2 # Binomial(in_features, 2)
+        num_pairs = in_features * (in_features + 1) // 2 # Binomial(in_features, 2) + in_features
         self.phi_triadic = nn.Parameter(torch.Tensor(out_features, num_pairs), requires_grad=train_triadic_eigenvectors)
         self.l_in_triadic = nn.Parameter(torch.Tensor(num_pairs))
         self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
@@ -68,7 +67,7 @@ class SpectralTriadic(nn.Module):
         # but must be on the same device as the module
         # Note that torch.triu_indices in practice does the lexicographical ordering
         # with the i' being the column number!
-        indices = torch.triu_indices(in_features, in_features, offset=1)
+        indices = torch.triu_indices(in_features, in_features, offset=0)
         self.register_buffer('triu_rows', indices[0])
         self.register_buffer('triu_cols', indices[1])
             
@@ -98,7 +97,7 @@ class SpectralTriadic(nn.Module):
         # w_kij = (L_ij - L_k) * phi_kij
         weight_triadic = (self.l_in_triadic.unsqueeze(0) - self.l_out_triadic.unsqueeze(1)) * self.phi_triadic
         
-        # Compute bilinear term: sum_{j>i} w_kij * x_i * x_j
+        # Compute bilinear term: sum_{j>=i} w_kij * x_i * x_j
         x_i = input[:, self.triu_rows]
         x_j = input[:, self.triu_cols]
         x_pairs = x_i * x_j
@@ -113,7 +112,7 @@ class SpectralTriadicOnly(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         
-        num_pairs = in_features * (in_features - 1) // 2 # Binomial(in_features, 2)
+        num_pairs = in_features * (in_features + 1) // 2 # Binomial(in_features, 2) + in_features
         self.phi_triadic = nn.Parameter(torch.Tensor(out_features, num_pairs), requires_grad=train_triadic_eigenvectors)
         self.l_in_triadic = nn.Parameter(torch.Tensor(num_pairs))
         self.l_out_triadic = nn.Parameter(torch.Tensor(out_features))
@@ -123,7 +122,7 @@ class SpectralTriadicOnly(nn.Module):
         # but must be on the same device as the module
         # Note that torch.triu_indices in practice does the lexicographical ordering
         # with the i' being the column number!
-        indices = torch.triu_indices(in_features, in_features, offset=1)
+        indices = torch.triu_indices(in_features, in_features, offset=0)
         self.register_buffer('triu_rows', indices[0])
         self.register_buffer('triu_cols', indices[1])
             
@@ -140,7 +139,7 @@ class SpectralTriadicOnly(nn.Module):
         # w_kij = (L_ij - L_k) * phi_kij
         weight_triadic = (self.l_in_triadic.unsqueeze(0) - self.l_out_triadic.unsqueeze(1)) * self.phi_triadic
         
-        # Compute bilinear term: sum_{j>i} w_kij * x_i * x_j
+        # Compute bilinear term: sum_{j>=i} w_kij * x_i * x_j
         x_i = input[:, self.triu_rows]
         x_j = input[:, self.triu_cols]
         x_pairs = x_i * x_j
@@ -157,7 +156,7 @@ class DirectSpaceTriadic(nn.Module):
 
         self.linear = nn.Linear(in_features, out_features)
         
-        num_pairs = in_features * (in_features - 1) // 2 # Binomial(in_features, 2)
+        num_pairs = in_features * (in_features + 1) // 2 # Binomial(in_features, 2) + in_features
         self.weight_triadic = nn.Parameter(torch.Tensor(out_features, num_pairs))
 
         # Register upper triangular indices for triadic interactions
@@ -165,7 +164,7 @@ class DirectSpaceTriadic(nn.Module):
         # but must be on the same device as the module
         # Note that torch.triu_indices in practice does the lexicographical ordering
         # with the i' being the column number!
-        indices = torch.triu_indices(in_features, in_features, offset=1)
+        indices = torch.triu_indices(in_features, in_features, offset=0)
         self.register_buffer('triu_rows', indices[0])
         self.register_buffer('triu_cols', indices[1])
 
@@ -177,7 +176,7 @@ class DirectSpaceTriadic(nn.Module):
     def forward(self, input):
         out_linear = self.linear(input)
         
-        # Compute bilinear term: sum_{j>i} w_kij * x_i * x_j
+        # Compute bilinear term: sum_{j>=i} w_kij * x_i * x_j
         x_i = input[:, self.triu_rows]
         x_j = input[:, self.triu_cols]
         x_pairs = x_i * x_j

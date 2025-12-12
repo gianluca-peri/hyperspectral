@@ -10,7 +10,7 @@ N = np.linspace(1, 20, 100)
 
 # Define the functions
 y_blue = N**2
-y_orange = N**2 + binom(N, 2) + N
+y_orange = N**2 + binom(N, 2) + 2*N
 y_black = 2 * N**2
 
 # Create the plot

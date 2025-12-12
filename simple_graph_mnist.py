@@ -109,7 +109,7 @@ def main():
     ax2.grid(True)
 
     # Save plot
-    output_path = os.path.join(base_dir, "simple_graph.mnist.png")
+    output_path = os.path.join(base_dir, "simple_graph_mnist.png")
     plt.tight_layout()
     plt.savefig(output_path)
     print(f"Plot saved to {output_path}")
