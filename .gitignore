@@ -1,6 +1,7 @@
 data/
 xor/
 regression/
+feynman_regression/
 mnist/
 alpha_mnist/
 mlp_fashion_mnist/

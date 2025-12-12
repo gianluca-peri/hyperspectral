@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import sympy as sp
 import matplotlib.pyplot as plt
-from spectral.layers import SpectralTriadic
+from spectral.layers import SpectralTriadic, SpectralTriadicOnly
 
 # Define MLP and TriadicMLP classes
 class MLP(torch.nn.Module):
@@ -31,6 +31,21 @@ class TriadicMLP(torch.nn.Module):
         x = self.layer2(x)
         return x
 
+class AugmentedTriadicMLP(torch.nn.Module):
+    def __init__(self, hidden_dim, input_dim, output_dim=1):
+        super(AugmentedTriadicMLP, self).__init__()
+        self.linear1 = torch.nn.Linear(input_dim, hidden_dim)
+        self.triadic1 = SpectralTriadicOnly(input_dim, hidden_dim)
+        self.linear2 = torch.nn.Linear(hidden_dim, output_dim)
+        self.triadic2 = SpectralTriadicOnly(hidden_dim, output_dim)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        x = self.relu(self.linear1(x)) + self.triadic1(x)
+        x = self.linear2(x) + self.triadic2(x)
+        return x
+    
+
 def get_run_dir(base_dir="feynman_regression"):
     """
     Create a new run directory to save results.
@@ -47,7 +62,16 @@ def get_run_dir(base_dir="feynman_regression"):
             return run_dir
         i += 1
 
-def generate_dataloaders(func_str, variables, ranges, num_samples=1000, batch_size=32, noise_std=0.0):
+def generate_dataloaders(func_str, variables, ranges, num_samples=None, batch_size=32, noise_std=0.0):
+    if num_samples is None:
+        # Heuristic: 1000 * num_vars * (1 + mean_range_length)
+        lengths = [h - l for l, h in ranges]
+        mean_length = np.mean(lengths) if lengths else 1.0
+        num_samples = int(1000 * len(variables) * (1 + mean_length))
+        # Cap it to avoid OOM? 100k?
+        num_samples = min(num_samples, 100000)
+        print(f"Dynamically selected num_samples: {num_samples} for {len(variables)} vars with mean range {mean_length:.2f}")
+
     # Create symbols
     syms = sp.symbols(variables)
     
@@ -100,7 +124,7 @@ def generate_dataloaders(func_str, variables, ranges, num_samples=1000, batch_si
 
     return train_loader, test_loader, len(variables)
 
-def train_and_evaluate(model, model_name, save_dir, train_loader, test_loader, epochs=100, learning_rate=1e-3, device='cuda'):
+def train_and_evaluate(model, model_name, save_dir, train_loader, test_loader, epochs=20, learning_rate=1e-3, device='cuda'):
     print(f"\nStarting training for {model_name} in {save_dir}")
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -111,8 +135,7 @@ def train_and_evaluate(model, model_name, save_dir, train_loader, test_loader, e
 
     history = {
         "train_loss": [],
-        "test_loss": 0.0,
-        "test_accuracy": 0.0
+        "test_loss": 0.0
     }
 
     for epoch in range(epochs):
@@ -143,8 +166,6 @@ def train_and_evaluate(model, model_name, save_dir, train_loader, test_loader, e
     # Test at the end
     model.eval()
     running_test_loss = 0.0
-    all_targets = []
-    all_outputs = []
 
     with torch.no_grad():
         for inputs, targets in test_loader:
@@ -152,21 +173,11 @@ def train_and_evaluate(model, model_name, save_dir, train_loader, test_loader, e
             outputs = model(inputs)
             loss = criterion(outputs, targets)
             running_test_loss += loss.item() * inputs.size(0)
-            all_targets.append(targets)
-            all_outputs.append(outputs)
 
     final_test_loss = running_test_loss / len(test_loader.dataset)
     
-    # Calculate R2 score as accuracy
-    all_targets = torch.cat(all_targets)
-    all_outputs = torch.cat(all_outputs)
-    ss_res = torch.sum((all_targets - all_outputs) ** 2)
-    ss_tot = torch.sum((all_targets - torch.mean(all_targets)) ** 2)
-    r2_score = 1 - ss_res / (ss_tot + 1e-8)
-
     history["test_loss"] = final_test_loss
-    history["test_accuracy"] = r2_score.item()
-    print(f"[{model_name}] Final Test Loss: {final_test_loss:.4f}, Test Accuracy (R2): {r2_score.item():.4f}")
+    print(f"[{model_name}] Final Test Loss: {final_test_loss:.4f}")
 
     with open(os.path.join(save_dir, "history.json"), "w") as f:
         json.dump(history, f, indent=4)
@@ -192,6 +203,9 @@ def parse_feynman_csv(filepath):
                 num_vars = int(row[4])
             except ValueError:
                 continue # Skip invalid rows
+            
+            if num_vars < 2:
+                continue
                 
             variables = []
             ranges = []
@@ -258,3 +272,8 @@ if __name__ == "__main__":
             triadic_model = TriadicMLP(hidden_dim=h_dim, input_dim=input_dim).to(device)
             triadic_save_dir = os.path.join(run_dir, func_name, f"hidden_{h_dim}", "triadic_mlp")
             train_and_evaluate(triadic_model, f"TriadicMLP_h{h_dim}_{func_name}", triadic_save_dir, train_loader, test_loader, device=device)
+
+            # Train AugmentedTriadicMLP
+            aug_triadic_model = AugmentedTriadicMLP(hidden_dim=h_dim, input_dim=input_dim).to(device)
+            aug_triadic_save_dir = os.path.join(run_dir, func_name, f"hidden_{h_dim}", "augmented_triadic_mlp")
+            train_and_evaluate(aug_triadic_model, f"AugmentedTriadicMLP_h{h_dim}_{func_name}", aug_triadic_save_dir, train_loader, test_loader, device=device)
