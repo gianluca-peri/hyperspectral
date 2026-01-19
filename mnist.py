@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
-from spectral.layers import SpectralLinear, SpectralTriadic, DirectSpaceTriadic
+from spectral.layers import SpectralTriadic, DirectSpaceTriadic
 
 def get_run_dir(base_dir="mnist"):
     """
