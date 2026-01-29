@@ -2,31 +2,12 @@ import os
 import torch
 import json
 
-def save_plot(plot, save_path):
-    """Saves a matplotlib plot to the specified path."""
-    directory = os.path.dirname(save_path)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-    plot.savefig(save_path)
-
-def save_json(data, save_path):
-    """Saves data as a JSON file to the specified path."""
-    directory = os.path.dirname(save_path)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-    with open(save_path, 'w') as f:
-        json.dump(data, f, indent=4)
-
-def save_dir_function(dir_path):
-    ...
-
-def save_results_regression(dir_to_save, func_name, h_dim, results):
-    """Creates a directory to save results if it doesn't exist.
-    Then, saves the training results there."""
-    path = os.path.join(dir_to_save, func_name, f"hidden_{h_dim}", "triadic_mlp")
-    if not os.path.exists(dir_to_save):
-        os.makedirs(dir_to_save)
-    ...
+def choose_function(function_list, func_name):
+    """Selects and returns a function from a list based on its name."""
+    for func_expr, name in function_list:
+        if name == func_name:
+            return func_expr, name
+    raise ValueError(f"Function '{func_name}' not found in the provided function list.")
 
 def setup_torch_device(use_gpu=True, gpu_index=0, verbose=False):
     """
