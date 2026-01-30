@@ -6,6 +6,7 @@ list_of_2D_functions = [
     (2*x + 1, "linear"),
     (x**2 - 1, "quadratic"),
     (x**3 - x, "cubic"),
+    (x**4 - 2*x**2, "quartic"),
     (sp.sin(x), "sinusoidal"),
     (sp.cos(x), "cosinusoidal"),
 ]
