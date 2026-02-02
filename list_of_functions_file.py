@@ -9,6 +9,7 @@ list_of_2D_functions = [
     (x**4 - 2*x**2, "quartic"),
     (sp.sin(x), "sinusoidal"),
     (sp.cos(x), "cosinusoidal"),
+    (sp.exp(x), "exponential"),
 ]
 
 list_of_3D_functions = [
