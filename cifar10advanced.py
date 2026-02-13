@@ -214,7 +214,7 @@ class SpectralMLPMixer(nn.Module):
 # ---------------------------------------------------------------------------
 def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader,
                        test_loader, device, epochs, learning_rate,
-                       weighted_decay=1e-2):
+                       weighted_decay=1e-2, cut_short=True):
     print(f"\nStarting training for {model_name}")
     model_dir = os.path.join(run_dir, model_name)
     if not os.path.exists(model_dir):
@@ -223,8 +223,11 @@ def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader,
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate,
                             weight_decay=weighted_decay)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=5)
+    if cut_short:
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=5)
+    else:
+        scheduler = None
     best_val_loss = float('inf')
     epochs_since_improvement = 0
 
@@ -271,16 +274,19 @@ def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader,
                 total_confidence += confidence.sum().item()
 
         avg_val_loss = val_loss / len(val_loader)
-        scheduler.step(avg_val_loss)
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            epochs_since_improvement = 0
-        else:
-            epochs_since_improvement += 1
-        if epochs_since_improvement >= 10:
-            print(f"[{model_name}] Early stopping: no val loss improvement "
-                  f"for {epochs_since_improvement} epochs.")
-            break
+        if scheduler is not None:
+            scheduler.step(avg_val_loss)
+        if cut_short:
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                epochs_since_improvement = 0
+            else:
+                epochs_since_improvement += 1
+
+            if epochs_since_improvement >= 10:
+                print(f"[{model_name}] Early stopping: no val loss improvement "
+                      f"for {epochs_since_improvement} epochs.")
+                break
         current_lr = optimizer.param_groups[0]['lr']
 
         val_acc = 100 * correct / total
@@ -339,7 +345,10 @@ def main():
     batch_size = 128
     learning_rate = 1e-2
     weight_decay = 1e-3
-    epochs = 200
+    epochs = 100
+    # When True: use LR scheduler and allow early stopping (current behavior)
+    # When False: fixed LR and train for all epochs
+    cut_short = False
 
     num_workers = 4
     pin_memory = torch.cuda.is_available()
@@ -404,7 +413,7 @@ def main():
           f"{sum(p.numel() for p in std_mixer.parameters()):,}")
     train_and_evaluate(std_mixer, "standard_mlp_mixer", run_dir,
                        train_loader, val_loader, test_loader, device,
-                       epochs, learning_rate, weight_decay)
+                       epochs, learning_rate, weight_decay, cut_short)
 
     # Train SpectralTriadic MLP-Mixer
     spectral_mixer = SpectralMLPMixer(
@@ -415,7 +424,7 @@ def main():
           f"{sum(p.numel() for p in spectral_mixer.parameters()):,}")
     train_and_evaluate(spectral_mixer, "spectral_triadic_mixer", run_dir,
                        train_loader, val_loader, test_loader, device,
-                       epochs, learning_rate, weight_decay)
+                       epochs, learning_rate, weight_decay, cut_short)
 
 
 if __name__ == '__main__':

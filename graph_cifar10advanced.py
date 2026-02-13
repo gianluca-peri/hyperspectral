@@ -27,8 +27,8 @@ def get_all_runs(base_dir="cifar10advanced"):
 def aggregate_data(runs):
     # Map folder names to internal keys
     aggregated = {
-        "standard_mlp_mixer": {"train_loss": [], "val_accuracy": []},
-        "spectral_triadic_mixer": {"train_loss": [], "val_accuracy": []}
+        "standard_mlp_mixer": {"train_loss": [], "val_loss": [], "val_accuracy": []},
+        "spectral_triadic_mixer": {"train_loss": [], "val_loss": [], "val_accuracy": []}
     }
     
     for run_dir in runs:
@@ -39,6 +39,8 @@ def aggregate_data(runs):
             data = load_history(std_path)
             if "train_loss" in data:
                 aggregated["standard_mlp_mixer"]["train_loss"].append(data["train_loss"])
+            if "val_loss" in data:
+                aggregated["standard_mlp_mixer"]["val_loss"].append(data["val_loss"])
             if "val_accuracy" in data:
                 aggregated["standard_mlp_mixer"]["val_accuracy"].append(data["val_accuracy"])
             
@@ -46,6 +48,8 @@ def aggregate_data(runs):
             data = load_history(spectral_path)
             if "train_loss" in data:
                 aggregated["spectral_triadic_mixer"]["train_loss"].append(data["train_loss"])
+            if "val_loss" in data:
+                aggregated["spectral_triadic_mixer"]["val_loss"].append(data["val_loss"])
             if "val_accuracy" in data:
                 aggregated["spectral_triadic_mixer"]["val_accuracy"].append(data["val_accuracy"])
             
@@ -88,8 +92,8 @@ def main():
 
     data = aggregate_data(runs)
 
-    # Create plot
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    # Create plot with three panels: Train Loss, Val Loss, Val Accuracy
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
 
     # Colors
     c_std = 'tab:blue'
@@ -134,8 +138,18 @@ def main():
     ax2.legend()
     ax2.grid(True)
 
+    # Plot Validation Loss (third panel)
+    plot_metric(ax3, data["standard_mlp_mixer"], "val_loss", "Standard MLP-Mixer", "o", c_std)
+    plot_metric(ax3, data["spectral_triadic_mixer"], "val_loss", "Spectral Triadic Mixer", "^", c_spec)
+
+    ax3.set_title('Validation Loss')
+    ax3.set_xlabel('Epoch')
+    ax3.set_ylabel('Loss')
+    ax3.legend()
+    ax3.grid(True)
+
     # Save plot
-    output_path = os.path.join(base_dir, "simple_graph_cifar10advanced.png")
+    output_path = os.path.join(base_dir, "graph_cifar10advanced.png")
     plt.tight_layout()
     plt.savefig(output_path)
     print(f"Plot saved to {output_path}")
