@@ -13,20 +13,20 @@ function_list = list_of_2D_functions if dim==1 else list_of_3D_functions
 device = setup_torch_device(use_gpu=True, gpu_index=1)
 dir_to_save = "./Results/Regression"
 func_expr, func_name = choose_function(function_list, func_name='quartic')  # Change function name as needed
-func_kwargs = {'min_interval': -5, 'max_interval': 5, 'noise_std': 0.0}
+func_kwargs = {'min_interval': -1.5, 'max_interval': 1.5, 'noise_std': 0.1, 'num_samples': 2000}
 train, test = generate_dataloaders(func_expr, dim=dim, **func_kwargs)
 #%%
-h_dim = 3
-n_layers = 4 # 3 means 1 hidden layer
+h_dim = 4
+n_layers = 5 # 3 means 1 hidden layer
 if n_layers == 3:
-    triadic_model = TriadicMLP(hidden_dim=h_dim, input_dim=1, output_dim=1).to(device)
+    triadic_model = TriadicMLP(hidden_dim=h_dim, input_dim=dim, output_dim=1).to(device)
 elif n_layers >= 3:
     triadic_model = DeepTriadicMLP_Funnel(hidden_dim=h_dim, input_dim=dim, output_dim=1, num_layers=n_layers).to(device)
 else:
     raise ValueError("n_layers must be at least 3")
 summary(triadic_model, input_size=(1, dim))
 #%%
-training_kwargs = {"epochs": 200, "learning_rate":1e-4,
+training_kwargs = {"epochs": 300, "learning_rate":1*1e-4,
                    "model_name": f"TriadicMLP_h{h_dim}_{func_name}", "save_dir": dir_to_save, "device": device}
 triadic_model = train_and_evaluate(triadic_model, train, test, **training_kwargs)
 #%%
@@ -59,21 +59,26 @@ if dim==1:
     y_pred = y_pred[sorted_indices]
 
 fig, ax = plt.subplots()
-ax.plot(x_test, y_test, 'o', markersize=5, label="True Values")
-ax.plot(x_test, y_pred, 'x-', markersize=3, label="Predictions", alpha=0.7)
+ax.plot(x_test, y_test, 'o', markersize=4, label="Test")
+ax.plot(x_test, y_pred, 'x-', markersize=5, label="Predictions", alpha=0.7)
 ax.set_xlabel(r"$x$", fontsize=16)
 ax.set_ylabel(r"$f(x)$", fontsize=16)
-ax.set_title(f"{func_name}, h_dim = {h_dim}, n_layers= {n_layers}", fontsize=15)
+# ax.set_title(f"{func_name}, h_dim = {h_dim}, n_layers= {n_layers}", fontsize=15)
 ax.grid()
 ax.legend()
 fig.tight_layout()
 plt.show()
 #%%
-# fig.savefig(f'Plots/{func_name}_hdim={h_dim}_nlayers={n_layers}.png')
+fig.savefig(f'Plots/{func_name}_hdim={h_dim}_nlayers={n_layers}.png')
 
 # #%%
 # plt.plot(x_test, np.abs(y_test-y_pred), 'x-', markersize=5, label="True Values")
 # plt.yscale('log')
 # plt.grid()
 # plt.show()
+#%%
+## Compute the MSE on the test set
+clean_fun = x_test**4 - 2*x_test**2
+mse = np.mean((clean_fun - y_pred) ** 2)
+print(f"Test MSE: {mse:.6f}")
 

@@ -50,15 +50,25 @@ class DeepTriadicMLP(torch.nn.Module):
     def forward(self, x):
         return self.network(x)
 
+import torch
+
 class DeepTriadicMLP_Funnel(torch.nn.Module):
+    # Must be deeply tested, it is recomended to use DeepTriadicMLP in general
     def __init__(self, hidden_dim, input_dim, output_dim=1, num_layers=3):
-        super(DeepTriadicMLP_Funnel, self).__init__()
-        layers = [SpectralTriadic(input_dim, min(hidden_dim - num_layers + 3, 2))]
-        for i in range(num_layers - 3):
-            h_dim_i = max(hidden_dim - num_layers + 3 + i, 2)
-            h_dim_i_next = max(hidden_dim - num_layers + 4 + i, 2)
-            layers.append(SpectralTriadic(h_dim_i, h_dim_i_next))
-        layers.append(SpectralTriadic(hidden_dim, output_dim))
+        super().__init__()
+        assert num_layers >= 2, "num_layers must be >= 2 (input->...->output)"
+        hidden_dim = int(hidden_dim)
+        num_layers = int(num_layers)
+        n_hidden_layers = num_layers - 1
+        hidden_dims = []
+        start = hidden_dim - (n_hidden_layers - 1)
+        for i in range(n_hidden_layers):
+            hidden_dims.append(max(start + i, 2))
+        layers = []
+        layers.append(SpectralTriadic(input_dim, hidden_dims[0]))
+        for in_d, out_d in zip(hidden_dims[:-1], hidden_dims[1:]):
+            layers.append(SpectralTriadic(in_d, out_d))
+        layers.append(SpectralTriadic(hidden_dims[-1], output_dim))
         self.network = torch.nn.Sequential(*layers)
 
     def forward(self, x):

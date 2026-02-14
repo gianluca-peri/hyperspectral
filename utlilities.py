@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import torch
 import json
 
+
 def choose_function(function_list, func_name):
     """Selects and returns a function from a list based on its name."""
     for func_expr, name in function_list:

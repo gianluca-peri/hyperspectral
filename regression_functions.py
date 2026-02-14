@@ -52,7 +52,8 @@ def train_and_evaluate(model, train, test, **kwargs):
     device = kwargs.get("device", "cuda")
 
     model.to(device)
-    criterion = torch.nn.MSELoss()
+    # criterion = torch.nn.MSELoss()
+    criterion = torch.nn.L1Loss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     history = {
         "train_loss": [],
@@ -86,6 +87,71 @@ def train_and_evaluate(model, train, test, **kwargs):
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
             loss = criterion(outputs, targets)
+            running_test_loss += loss.item() * inputs.size(0)
+
+    final_test_loss = running_test_loss / len(test.dataset)
+    history["test_loss"] = final_test_loss
+    print(f"[{model_name}] Final Test Loss: {final_test_loss:.4f}")
+
+    with open(os.path.join(save_dir, f"{model_name}_history.json"), "w") as f:
+        json.dump(history, f, indent=4)
+
+    torch.save(model.state_dict(), os.path.join(save_dir, f"{model_name}.pth"))
+    return model
+
+import os, json  # assicurati che ci siano se non li hai già
+
+def train_and_evaluate_weighted(model, train, test, **kwargs):
+    epochs = kwargs.get("epochs", 100)
+    learning_rate = kwargs.get("learning_rate", 1e-3)
+    model_name = kwargs.get("model_name", "model")
+    save_dir = kwargs.get("save_dir", "./Results")
+    device = kwargs.get("device", "cuda")
+
+    wx = kwargs.get("wx", 2.0)
+    wy = kwargs.get("wy", 1.0)
+
+    model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    history = {"train_loss": [], "test_loss": 0.0}
+
+    for epoch in range(epochs):
+        model.train()
+        running_train_loss = 0.0
+        for inputs, targets in train:
+            inputs, targets = inputs.to(device), targets.to(device)
+            optimizer.zero_grad()
+            outputs = model(inputs)
+
+            ## weighted L1 (same idea works with L2)
+            err = torch.abs(outputs - targets)                     # [B,2]
+            w = torch.tensor([wx, wy], device=err.device).view(1, -1)  # [1,2]
+            loss = (err * w).mean()
+
+            loss.backward()
+            optimizer.step()
+            running_train_loss += loss.item() * inputs.size(0)
+
+        epoch_train_loss = running_train_loss / len(train.dataset)
+        history["train_loss"].append(epoch_train_loss)
+        if (epoch + 1) % 10 == 0:
+            print(f"[{model_name}] Epoch {epoch + 1}/{epochs}, Train Loss: {epoch_train_loss:.4f}")
+
+        with open(os.path.join(save_dir, f"{model_name}_history.json"), "w") as f:
+            json.dump(history, f, indent=4)
+
+    ## Test at the end
+    model.eval()
+    running_test_loss = 0.0
+    with torch.no_grad():
+        for inputs, targets in test:
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = model(inputs)
+
+            err = torch.abs(outputs - targets)
+            w = torch.tensor([wx, wy], device=err.device).view(1, -1)
+            loss = (err * w).mean()
+
             running_test_loss += loss.item() * inputs.size(0)
 
     final_test_loss = running_test_loss / len(test.dataset)
