@@ -2,8 +2,12 @@ data/
 mnist/
 cifar10/
 cifar10advanced/
+cifar100advanced/
+cifar100_vit/
 cifar10.log
 cifar10advanced.log
+cifar100advanced.log
+cifar100vit.log
 alpha_mnist/
 mlp_fashion_mnist/
 spectral/__pycache__/

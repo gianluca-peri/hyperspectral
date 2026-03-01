@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.special import binom
+import os
 
 # Set readable font sizes
 plt.rc('font', size=16)
@@ -9,9 +10,9 @@ plt.rc('font', size=16)
 N = np.linspace(1, 20, 100)
 
 # Define the functions
-y_blue = N**2
-y_orange = N**2 + binom(N, 2) + 2*N
-y_black = 2 * N**2
+y_blue = N**2 + N
+y_orange = N**2 + N*(N+1)/2 + 3*N + 1 + N
+y_black = 2 * N**2 + 2 * N
 
 # Create the plot
 plt.figure(figsize=(10, 6))
@@ -27,5 +28,6 @@ plt.xticks(np.arange(1, 21, 2))
 plt.legend()
 plt.grid(True)
 
-# Save the plot
-plt.savefig('comparison_2n2.png')
+# Save the plot in the same folder as the script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+plt.savefig(os.path.join(script_dir, 'comparison_2n2.png'))

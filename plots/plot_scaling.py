@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.special import binom
+import os
 
 # Set readable font sizes
 plt.rc('font', size=16)
@@ -9,9 +10,9 @@ plt.rc('font', size=16)
 N = np.linspace(1, 20, 100)
 
 # Define the functions
-y1 = N**2
-y2 = N**2 + N**3
-y3 = N**2 + binom(N, 2) + 2*N
+y1 = N**2 + N
+y2 = N**2 + N**3 + N
+y3 = N**2 + N*(N+1)/2 + 3*N + 1 + N
 
 # Create the plot
 plt.figure(figsize=(10, 6))
@@ -27,5 +28,6 @@ plt.xticks(np.arange(1, 21, 2))
 plt.legend()
 plt.grid(True)
 
-# Save the plot
-plt.savefig('scaling_comparison.png')
+# Save the plot in the same folder as the script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+plt.savefig(os.path.join(script_dir, 'scaling_comparison.png'))
