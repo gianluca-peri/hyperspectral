@@ -1,5 +1,8 @@
 data/
 mnist/
+mnist.log
+fashion_mnist/
+fashion_mnist.log
 cifar10/
 cifar10advanced/
 cifar100advanced/

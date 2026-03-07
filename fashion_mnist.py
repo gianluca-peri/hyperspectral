@@ -10,7 +10,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 from spectral.layers import SpectralTriadic, DirectSpaceTriadic
 
-def get_run_dir(base_dir="mnist"):
+def get_run_dir(base_dir="fashion_mnist"):
     """
     Create a new run directory to save results.
     Returns the path to the new run directory.
@@ -30,7 +30,7 @@ class Perceptron(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
+        # FashionMNIST images are 28x28 = 784
         self.layer = nn.Linear(784, 10)
 
     def forward(self, x):
@@ -41,7 +41,7 @@ class TriadicPerceptron(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
+        # FashionMNIST images are 28x28 = 784
         self.layer = SpectralTriadic(784, 10)
 
     def forward(self, x):
@@ -52,7 +52,7 @@ class DirectSpaceTriadicPerceptron(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
+        # FashionMNIST images are 28x28 = 784
         self.layer = DirectSpaceTriadic(784, 10)
 
     def forward(self, x):
@@ -64,7 +64,7 @@ class TrainedEigvecTriadicPerceptron(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        # MNIST images are 28x28 = 784
+        # FashionMNIST images are 28x28 = 784
         self.layer = SpectralTriadic(784, 10, train_triadic_eigenvectors=True)
 
     def forward(self, x):
@@ -73,7 +73,7 @@ class TrainedEigvecTriadicPerceptron(nn.Module):
 
 # Hyperparameters
 batch_size = 128
-learning_rate = 1e-2
+learning_rate = 1e-3
 epochs = 50
 warmup_epochs = 10
 
@@ -84,11 +84,11 @@ print(f"Using device: {device}")
 # Data loading
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
+    transforms.Normalize((0.2860,), (0.3530,))
 ])
 
-full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+full_train_dataset = datasets.FashionMNIST(root='./data', train=True, download=True, transform=transform)
+test_dataset = datasets.FashionMNIST(root='./data', train=False, download=True, transform=transform)
 
 # Split train into train and validation (e.g., 50000 train, 10000 val)
 train_size = 50000
