@@ -50,8 +50,6 @@ class DeepTriadicMLP(torch.nn.Module):
     def forward(self, x):
         return self.network(x)
 
-import torch
-
 class DeepTriadicMLP_Funnel(torch.nn.Module):
     # Must be deeply tested, it is recomended to use DeepTriadicMLP in general
     def __init__(self, hidden_dim, input_dim, output_dim=1, num_layers=3):

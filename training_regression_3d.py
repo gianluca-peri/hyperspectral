@@ -4,7 +4,7 @@ import numpy as np
 from torchinfo import summary
 from training_classes import MLP, TriadicMLP, DeepTriadicMLP, DeepTriadicMLP_Funnel
 from regression_functions import generate_dataloaders, train_and_evaluate
-from utlilities import setup_torch_device, choose_function
+from utilities import setup_torch_device, choose_function
 from list_of_functions_file import *
 
 #%%

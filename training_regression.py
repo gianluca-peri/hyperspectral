@@ -4,7 +4,7 @@ import numpy as np
 from torchinfo import summary
 from training_classes import MLP, TriadicMLP, DeepTriadicMLP, DeepTriadicMLP_Funnel
 from regression_functions import generate_dataloaders, train_and_evaluate
-from utlilities import setup_torch_device, choose_function
+from utilities import setup_torch_device, choose_function
 from list_of_functions_file import *
 
 #%%
@@ -12,12 +12,12 @@ dim = 1  # Input dimension
 function_list = list_of_2D_functions if dim==1 else list_of_3D_functions
 device = setup_torch_device(use_gpu=True, gpu_index=1)
 dir_to_save = "./Results/Regression"
-func_expr, func_name = choose_function(function_list, func_name='quartic')  # Change function name as needed
+func_expr, func_name = choose_function(function_list, func_name='quadratic')  # Change function name as needed
 func_kwargs = {'min_interval': -1.5, 'max_interval': 1.5, 'noise_std': 0.1, 'num_samples': 2000}
 train, test = generate_dataloaders(func_expr, dim=dim, **func_kwargs)
 #%%
-h_dim = 4
-n_layers = 5 # 3 means 1 hidden layer
+h_dim = 2
+n_layers = 2 # 3 means 1 hidden layer
 if n_layers == 3:
     triadic_model = TriadicMLP(hidden_dim=h_dim, input_dim=dim, output_dim=1).to(device)
 elif n_layers >= 3:
