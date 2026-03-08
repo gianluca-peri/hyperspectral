@@ -1,4 +1,7 @@
 import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 import json
 import torch
 import torch.nn as nn

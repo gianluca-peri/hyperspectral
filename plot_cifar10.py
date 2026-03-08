@@ -1,12 +1,14 @@
 """
-plot_mnist.py – generate all MNIST plots and save each as a separate PNG.
+plot_cifar10.py – generate all CIFAR-10 plots and save each as a separate PNG.
 
-One PNG per metric, all 4 models on every plot:
-  mnist/train_loss.png
-  mnist/val_loss.png
-  mnist/val_accuracy.png
-  mnist/val_avg_confidence.png
-  mnist/confidence_histogram.png
+One PNG per metric, both models on every plot:
+  cifar10/train_loss.png
+  cifar10/val_loss.png
+  cifar10/val_accuracy.png
+  cifar10/val_avg_confidence.png
+  cifar10/test_confidence_histogram.png
+  cifar10/test_ece.png
+  cifar10/val_calibration_delta.png
 """
 
 import os
@@ -27,17 +29,16 @@ import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-from spectral.layers import SpectralTriadic, DirectSpaceTriadic
+from spectral.layers import SpectralTriadic
 
-BASE_DIR = "mnist"
+BASE_DIR = "cifar10"
 
 # ---------------------------------------------------------------------------
 # Model styles  (name → label, marker, color)
 # ---------------------------------------------------------------------------
 MODELS = {
-    "direct_linear":                   ("Direct Space Linear",                "o",  "tab:blue"),
-    "direct_space_triadic":            ("Direct Space Triadic",          "s",  "tab:green"),
-    "spectral_triadic":                ("Spectral Triadic",             "^",  "tab:orange"),
+    "direct mlp":           ("Direct MLP",          "o", "tab:blue"),
+    "spectral triadic mlp": ("Spectral Triadic MLP", "^", "tab:orange"),
 }
 
 # ---------------------------------------------------------------------------
@@ -121,8 +122,14 @@ METRIC_LABELS = {
 def plot_epoch_curves(agg):
     for metric, (title, ylabel) in METRIC_LABELS.items():
         fig, ax = plt.subplots(figsize=FIGSIZE)
+        any_data = False
         for name, (label, marker, color) in MODELS.items():
-            plot_mean_sem(ax, agg[name][metric], label, marker, color)
+            if agg[name][metric]:
+                plot_mean_sem(ax, agg[name][metric], label, marker, color)
+                any_data = True
+        if not any_data:
+            plt.close(fig)
+            continue
         ax.set_xlabel("Epoch")
         ax.set_ylabel(ylabel)
         if metric == "learning_rate":
@@ -133,55 +140,71 @@ def plot_epoch_curves(agg):
 
 
 # ---------------------------------------------------------------------------
-# Model definitions
+# Model definitions (matching cifar10.py)
 # ---------------------------------------------------------------------------
 
-class DirectLinearPerceptron(nn.Module):
+class MLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        self.layer = nn.Linear(784, 10)
+        self.relu = nn.ReLU()
+        self.layernorm1 = nn.LayerNorm(256)
+        self.layernorm2 = nn.LayerNorm(64)
+        self.layer1 = nn.Linear(3072, 256)
+        self.layer2 = nn.Linear(256, 64)
+        self.layer3 = nn.Linear(64, 10)
 
     def forward(self, x):
-        return self.layer(self.flatten(x))
+        x = self.flatten(x)
+        x = self.layer1(x)
+        x = self.relu(x)
+        x = self.layernorm1(x)
+        x = self.layer2(x)
+        x = self.relu(x)
+        x = self.layernorm2(x)
+        x = self.layer3(x)
+        return x
 
 
-class DirectSpaceTriadicPerceptron(nn.Module):
+class TriadicMLP(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        self.layer = DirectSpaceTriadic(784, 10)
+        self.layernorm1 = nn.LayerNorm(256)
+        self.layernorm2 = nn.LayerNorm(64)
+        self.layer1 = SpectralTriadic(3072, 256)
+        self.layer2 = SpectralTriadic(256, 64)
+        self.layer3 = SpectralTriadic(64, 10)
 
     def forward(self, x):
-        return self.layer(self.flatten(x))
-
-
-class TriadicPerceptron(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        self.layer = SpectralTriadic(784, 10)
-
-    def forward(self, x):
-        return self.layer(self.flatten(x))
-
-
-class TrainedEigvecTriadicPerceptron(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        self.layer = SpectralTriadic(784, 10, train_triadic_eigenvectors=True)
-
-    def forward(self, x):
-        return self.layer(self.flatten(x))
+        x = self.flatten(x)
+        x = self.layer1(x)
+        x = self.layernorm1(x)
+        x = self.layer2(x)
+        x = self.layernorm2(x)
+        x = self.layer3(x)
+        return x
 
 
 MODEL_CLASSES = {
-    "direct_linear":                   DirectLinearPerceptron,
-    "direct_space_triadic":            DirectSpaceTriadicPerceptron,
-    "spectral_triadic":                TriadicPerceptron,
-    "spectral_triadic_trained_eigvec": TrainedEigvecTriadicPerceptron,
+    "direct mlp":           MLP,
+    "spectral triadic mlp": TriadicMLP,
 }
+
+# CIFAR-10 normalisation stats
+CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
+CIFAR10_STD  = (0.2470, 0.2435, 0.2616)
+
+
+def get_test_loader():
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD),
+    ])
+    return DataLoader(
+        datasets.CIFAR10(root="./data", train=False, download=True, transform=transform),
+        batch_size=64, shuffle=False,
+    )
 
 
 def get_confidences(model, loader, device):
@@ -194,44 +217,13 @@ def get_confidences(model, loader, device):
     return np.array(confs)
 
 
-def compute_ece(model, loader, device, n_bins=15):
-    """Expected Calibration Error over n_bins equal-width confidence bins."""
-    model.eval()
-    confidences, corrects = [], []
-    with torch.no_grad():
-        for images, labels in loader:
-            probs = torch.softmax(model(images.to(device)), dim=1)
-            conf, preds = torch.max(probs, dim=1)
-            confidences.extend(conf.cpu().numpy())
-            corrects.extend((preds == labels.to(device)).cpu().numpy())
-    confidences = np.array(confidences)
-    corrects    = np.array(corrects, dtype=float)
-    n           = len(confidences)
-    bin_edges   = np.linspace(0.0, 1.0, n_bins + 1)
-    ece = 0.0
-    for i in range(n_bins):
-        mask = (confidences > bin_edges[i]) & (confidences <= bin_edges[i + 1])
-        if mask.sum() == 0:
-            continue
-        ece += (mask.sum() / n) * abs(corrects[mask].mean() - confidences[mask].mean())
-    return ece
-
-
 # ---------------------------------------------------------------------------
-# Confidence histogram (one PNG, all 4 models)
+# Confidence histogram (one PNG, all models)
 # ---------------------------------------------------------------------------
 
 def plot_confidence_histogram(run_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
-    test_loader = DataLoader(
-        datasets.MNIST(root="./data", train=False, download=True, transform=transform),
-        batch_size=64, shuffle=False,
-    )
+    test_loader = get_test_loader()
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
 
@@ -266,19 +258,11 @@ def plot_confidence_histogram(run_dir):
 
 def plot_ece(runs, n_bins=10):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
-    test_loader = DataLoader(
-        datasets.MNIST(root="./data", train=False, download=True, transform=transform),
-        batch_size=64, shuffle=False,
-    )
+    test_loader = get_test_loader()
 
     bin_edges   = np.linspace(0.0, 1.0, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    # per_run_acc[name] = list of (n_bins,) arrays, one per run
     per_run_acc = {name: [] for name in MODELS}
     per_run_ece = {name: [] for name in MODELS}
 
@@ -322,13 +306,11 @@ def plot_ece(runs, n_bins=10):
         return
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
-
-    # Perfect‑calibration diagonal
     ax.plot([0, 1], [0, 1], "k--", linewidth=1.2, label="Perfect calibration")
 
     for name in names_with_data:
         label, marker, color = MODELS[name]
-        acc_mat  = np.array(per_run_acc[name])   # (n_runs, n_bins)
+        acc_mat  = np.array(per_run_acc[name])
         ece_mean = np.mean(per_run_ece[name])
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore", RuntimeWarning)
@@ -352,8 +334,6 @@ def plot_ece(runs, n_bins=10):
 
 # ---------------------------------------------------------------------------
 # Calibration delta: accuracy − confidence  (both in [0, 1])
-# Negative  → model is overconfident (confidence > accuracy)
-# Positive  → model is underconfident
 # ---------------------------------------------------------------------------
 
 def plot_calibration_delta(agg):
@@ -365,7 +345,6 @@ def plot_calibration_delta(agg):
         if not acc_lists or not conf_lists:
             continue
 
-        # Align lengths across runs
         try:
             acc_mat  = np.array(acc_lists)
             conf_mat = np.array(conf_lists)
@@ -376,7 +355,7 @@ def plot_calibration_delta(agg):
             conf_mat = np.array([x[:min_len] for x in conf_lists])
 
         # val_accuracy is %, val_avg_confidence is [0,1] → normalise accuracy
-        delta_mat = acc_mat / 100.0 - conf_mat          # shape (n_runs, n_epochs)
+        delta_mat = acc_mat / 100.0 - conf_mat
 
         mean = np.mean(delta_mat, axis=0)
         sem  = np.std(delta_mat, axis=0) / np.sqrt(delta_mat.shape[0])

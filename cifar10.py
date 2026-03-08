@@ -1,4 +1,7 @@
 import os
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 import json
 import torch
 import torch.nn as nn
@@ -76,8 +79,6 @@ def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader, tes
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weighted_decay)
     # LR scheduler: halve LR if no val loss improvement for 5 epochs
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-    best_val_loss = float('inf')
-    epochs_since_improvement = 0
     
     history = {
         "train_loss": [],
@@ -127,17 +128,8 @@ def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader, tes
                 total_confidence += confidence.sum().item()
         
         avg_val_loss = val_loss / len(val_loader)
-        # Scheduler step and early stopping logic
+        # Scheduler step
         scheduler.step(avg_val_loss)
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            epochs_since_improvement = 0
-        else:
-            epochs_since_improvement += 1
-        # Stop training if no improvement for 10 epochs
-        if epochs_since_improvement >= 10:
-            print(f"[{model_name}] Early stopping: no val loss improvement for {epochs_since_improvement} epochs.")
-            break
         current_lr = optimizer.param_groups[0]['lr']
         
         val_acc = 100 * correct / total
@@ -188,7 +180,7 @@ def main():
     batch_size = 128
     learning_rate = 1e-2
     weight_decay = 1e-3
-    epochs = 200
+    epochs = 100
 
     # DataLoader workers (adjust for faster loading)
     num_workers = 4

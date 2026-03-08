@@ -1,12 +1,14 @@
 """
-plot_mnist.py – generate all MNIST plots and save each as a separate PNG.
+plot_cifar10advanced.py – generate all CIFAR-10 Advanced plots and save each as a separate PNG.
 
-One PNG per metric, all 4 models on every plot:
-  mnist/train_loss.png
-  mnist/val_loss.png
-  mnist/val_accuracy.png
-  mnist/val_avg_confidence.png
-  mnist/confidence_histogram.png
+One PNG per metric, both models on every plot:
+  cifar10advanced/train_loss.png
+  cifar10advanced/val_loss.png
+  cifar10advanced/val_accuracy.png
+  cifar10advanced/val_avg_confidence.png
+  cifar10advanced/val_calibration_delta.png
+  cifar10advanced/test_confidence_histogram.png
+  cifar10advanced/test_ece.png
 """
 
 import os
@@ -27,17 +29,16 @@ import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-from spectral.layers import SpectralTriadic, DirectSpaceTriadic
+from spectral.layers import SpectralTriadic
 
-BASE_DIR = "mnist"
+BASE_DIR = "cifar10advanced"
 
 # ---------------------------------------------------------------------------
 # Model styles  (name → label, marker, color)
 # ---------------------------------------------------------------------------
 MODELS = {
-    "direct_linear":                   ("Direct Space Linear",                "o",  "tab:blue"),
-    "direct_space_triadic":            ("Direct Space Triadic",          "s",  "tab:green"),
-    "spectral_triadic":                ("Spectral Triadic",             "^",  "tab:orange"),
+    "standard_mlp_mixer":    ("Standard MLP-Mixer",    "o", "tab:blue"),
+    "spectral_triadic_mixer": ("Spectral Triadic Mixer", "^", "tab:orange"),
 }
 
 # ---------------------------------------------------------------------------
@@ -121,8 +122,14 @@ METRIC_LABELS = {
 def plot_epoch_curves(agg):
     for metric, (title, ylabel) in METRIC_LABELS.items():
         fig, ax = plt.subplots(figsize=FIGSIZE)
+        any_data = False
         for name, (label, marker, color) in MODELS.items():
-            plot_mean_sem(ax, agg[name][metric], label, marker, color)
+            if agg[name][metric]:
+                plot_mean_sem(ax, agg[name][metric], label, marker, color)
+                any_data = True
+        if not any_data:
+            plt.close(fig)
+            continue
         ax.set_xlabel("Epoch")
         ax.set_ylabel(ylabel)
         if metric == "learning_rate":
@@ -133,55 +140,151 @@ def plot_epoch_curves(agg):
 
 
 # ---------------------------------------------------------------------------
-# Model definitions
+# Model definitions (matching cifar10advanced.py)
 # ---------------------------------------------------------------------------
 
-class DirectLinearPerceptron(nn.Module):
-    def __init__(self):
+class MixerBlock(nn.Module):
+    def __init__(self, num_patches, hidden_dim,
+                 tokens_mlp_dim=None, channels_mlp_dim=None):
         super().__init__()
-        self.flatten = nn.Flatten()
-        self.layer = nn.Linear(784, 10)
+        if tokens_mlp_dim is None:
+            tokens_mlp_dim = num_patches * 4
+        if channels_mlp_dim is None:
+            channels_mlp_dim = hidden_dim * 4
+
+        self.token_norm = nn.LayerNorm(hidden_dim)
+        self.token_mlp = nn.Sequential(
+            nn.Linear(num_patches, tokens_mlp_dim),
+            nn.GELU(),
+            nn.Linear(tokens_mlp_dim, num_patches),
+        )
+        self.channel_norm = nn.LayerNorm(hidden_dim)
+        self.channel_mlp = nn.Sequential(
+            nn.Linear(hidden_dim, channels_mlp_dim),
+            nn.GELU(),
+            nn.Linear(channels_mlp_dim, hidden_dim),
+        )
 
     def forward(self, x):
-        return self.layer(self.flatten(x))
+        residual = x
+        y = self.token_norm(x).transpose(1, 2)
+        y = self.token_mlp(y)
+        x = residual + y.transpose(1, 2)
+        residual = x
+        y = self.channel_norm(x)
+        y = self.channel_mlp(y)
+        x = residual + y
+        return x
 
 
-class DirectSpaceTriadicPerceptron(nn.Module):
-    def __init__(self):
+class StandardMLPMixer(nn.Module):
+    def __init__(self, in_channels=3, img_size=32, patch_size=4,
+                 hidden_dim=128, num_layers=6, num_classes=10,
+                 tokens_mlp_dim=None, channels_mlp_dim=None):
         super().__init__()
-        self.flatten = nn.Flatten()
-        self.layer = DirectSpaceTriadic(784, 10)
+        assert img_size % patch_size == 0
+        self.patch_size = patch_size
+        self.num_patches = (img_size // patch_size) ** 2
+        self.patch_dim = in_channels * patch_size * patch_size
+        self.hidden_dim = hidden_dim
+        self.patch_embed = nn.Linear(self.patch_dim, hidden_dim)
+        self.blocks = nn.Sequential(*[
+            MixerBlock(self.num_patches, hidden_dim, tokens_mlp_dim, channels_mlp_dim)
+            for _ in range(num_layers)
+        ])
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.head = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, x):
-        return self.layer(self.flatten(x))
+        B, C, H, W = x.shape
+        P = self.patch_size
+        x = x.unfold(2, P, P).unfold(3, P, P)
+        x = x.contiguous().permute(0, 2, 3, 1, 4, 5)
+        x = x.reshape(B, self.num_patches, self.patch_dim)
+        x = self.patch_embed(x)
+        x = self.blocks(x)
+        x = self.norm(x)
+        x = x.mean(dim=1)
+        x = self.head(x)
+        return x
 
 
-class TriadicPerceptron(nn.Module):
-    def __init__(self):
+class SpectralMixerBlock(nn.Module):
+    def __init__(self, num_patches, hidden_dim):
         super().__init__()
-        self.flatten = nn.Flatten()
-        self.layer = SpectralTriadic(784, 10)
+        self.token_norm = nn.LayerNorm(num_patches)
+        self.token_triadic = SpectralTriadic(num_patches, num_patches, bias=True)
+        self.channel_norm = nn.LayerNorm(hidden_dim)
+        self.channel_triadic = SpectralTriadic(hidden_dim, hidden_dim, bias=True)
 
     def forward(self, x):
-        return self.layer(self.flatten(x))
+        B, P, C = x.shape
+        residual = x
+        y = x.transpose(1, 2)
+        y = self.token_norm(y)
+        y = y.reshape(B * C, P)
+        y = self.token_triadic(y)
+        y = y.reshape(B, C, P).transpose(1, 2)
+        x = residual + y
+        residual = x
+        y = self.channel_norm(x)
+        y = y.reshape(B * P, C)
+        y = self.channel_triadic(y)
+        y = y.reshape(B, P, C)
+        x = residual + y
+        return x
 
 
-class TrainedEigvecTriadicPerceptron(nn.Module):
-    def __init__(self):
+class SpectralMLPMixer(nn.Module):
+    def __init__(self, in_channels=3, img_size=32, patch_size=4,
+                 hidden_dim=128, num_layers=6, num_classes=10):
         super().__init__()
-        self.flatten = nn.Flatten()
-        self.layer = SpectralTriadic(784, 10, train_triadic_eigenvectors=True)
+        assert img_size % patch_size == 0
+        self.patch_size = patch_size
+        self.num_patches = (img_size // patch_size) ** 2
+        self.patch_dim = in_channels * patch_size * patch_size
+        self.hidden_dim = hidden_dim
+        self.patch_embed = nn.Linear(self.patch_dim, hidden_dim)
+        self.blocks = nn.Sequential(*[
+            SpectralMixerBlock(self.num_patches, hidden_dim)
+            for _ in range(num_layers)
+        ])
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.head = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, x):
-        return self.layer(self.flatten(x))
+        B, C, H, W = x.shape
+        P = self.patch_size
+        x = x.unfold(2, P, P).unfold(3, P, P)
+        x = x.contiguous().permute(0, 2, 3, 1, 4, 5)
+        x = x.reshape(B, self.num_patches, self.patch_dim)
+        x = self.patch_embed(x)
+        x = self.blocks(x)
+        x = self.norm(x)
+        x = x.mean(dim=1)
+        x = self.head(x)
+        return x
 
 
 MODEL_CLASSES = {
-    "direct_linear":                   DirectLinearPerceptron,
-    "direct_space_triadic":            DirectSpaceTriadicPerceptron,
-    "spectral_triadic":                TriadicPerceptron,
-    "spectral_triadic_trained_eigvec": TrainedEigvecTriadicPerceptron,
+    "standard_mlp_mixer":    StandardMLPMixer,
+    "spectral_triadic_mixer": SpectralMLPMixer,
 }
+
+# CIFAR-10 normalisation stats
+CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
+CIFAR10_STD  = (0.2470, 0.2435, 0.2616)
+
+
+def get_test_loader():
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD),
+    ])
+    return DataLoader(
+        datasets.CIFAR10(root="./data", train=False, download=True, transform=transform),
+        batch_size=64, shuffle=False,
+    )
 
 
 def get_confidences(model, loader, device):
@@ -194,44 +297,13 @@ def get_confidences(model, loader, device):
     return np.array(confs)
 
 
-def compute_ece(model, loader, device, n_bins=15):
-    """Expected Calibration Error over n_bins equal-width confidence bins."""
-    model.eval()
-    confidences, corrects = [], []
-    with torch.no_grad():
-        for images, labels in loader:
-            probs = torch.softmax(model(images.to(device)), dim=1)
-            conf, preds = torch.max(probs, dim=1)
-            confidences.extend(conf.cpu().numpy())
-            corrects.extend((preds == labels.to(device)).cpu().numpy())
-    confidences = np.array(confidences)
-    corrects    = np.array(corrects, dtype=float)
-    n           = len(confidences)
-    bin_edges   = np.linspace(0.0, 1.0, n_bins + 1)
-    ece = 0.0
-    for i in range(n_bins):
-        mask = (confidences > bin_edges[i]) & (confidences <= bin_edges[i + 1])
-        if mask.sum() == 0:
-            continue
-        ece += (mask.sum() / n) * abs(corrects[mask].mean() - confidences[mask].mean())
-    return ece
-
-
 # ---------------------------------------------------------------------------
-# Confidence histogram (one PNG, all 4 models)
+# Confidence histogram (one PNG, all models)
 # ---------------------------------------------------------------------------
 
 def plot_confidence_histogram(run_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
-    test_loader = DataLoader(
-        datasets.MNIST(root="./data", train=False, download=True, transform=transform),
-        batch_size=64, shuffle=False,
-    )
+    test_loader = get_test_loader()
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
 
@@ -266,19 +338,11 @@ def plot_confidence_histogram(run_dir):
 
 def plot_ece(runs, n_bins=10):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
-    test_loader = DataLoader(
-        datasets.MNIST(root="./data", train=False, download=True, transform=transform),
-        batch_size=64, shuffle=False,
-    )
+    test_loader = get_test_loader()
 
     bin_edges   = np.linspace(0.0, 1.0, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    # per_run_acc[name] = list of (n_bins,) arrays, one per run
     per_run_acc = {name: [] for name in MODELS}
     per_run_ece = {name: [] for name in MODELS}
 
@@ -322,13 +386,11 @@ def plot_ece(runs, n_bins=10):
         return
 
     fig, ax = plt.subplots(figsize=FIGSIZE)
-
-    # Perfect‑calibration diagonal
     ax.plot([0, 1], [0, 1], "k--", linewidth=1.2, label="Perfect calibration")
 
     for name in names_with_data:
         label, marker, color = MODELS[name]
-        acc_mat  = np.array(per_run_acc[name])   # (n_runs, n_bins)
+        acc_mat  = np.array(per_run_acc[name])
         ece_mean = np.mean(per_run_ece[name])
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore", RuntimeWarning)
@@ -352,8 +414,6 @@ def plot_ece(runs, n_bins=10):
 
 # ---------------------------------------------------------------------------
 # Calibration delta: accuracy − confidence  (both in [0, 1])
-# Negative  → model is overconfident (confidence > accuracy)
-# Positive  → model is underconfident
 # ---------------------------------------------------------------------------
 
 def plot_calibration_delta(agg):
@@ -365,7 +425,6 @@ def plot_calibration_delta(agg):
         if not acc_lists or not conf_lists:
             continue
 
-        # Align lengths across runs
         try:
             acc_mat  = np.array(acc_lists)
             conf_mat = np.array(conf_lists)
@@ -376,7 +435,7 @@ def plot_calibration_delta(agg):
             conf_mat = np.array([x[:min_len] for x in conf_lists])
 
         # val_accuracy is %, val_avg_confidence is [0,1] → normalise accuracy
-        delta_mat = acc_mat / 100.0 - conf_mat          # shape (n_runs, n_epochs)
+        delta_mat = acc_mat / 100.0 - conf_mat
 
         mean = np.mean(delta_mat, axis=0)
         sem  = np.std(delta_mat, axis=0) / np.sqrt(delta_mat.shape[0])

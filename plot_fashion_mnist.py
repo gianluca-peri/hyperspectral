@@ -14,10 +14,14 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import json
+import warnings
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from utils.style import apply, FIGSIZE, DPI
+
+apply()
 
 import torch
 import torch.nn as nn
@@ -31,10 +35,9 @@ BASE_DIR = "fashion_mnist"
 # Model styles  (name → label, marker, color)
 # ---------------------------------------------------------------------------
 MODELS = {
-    "direct_linear":                   ("Direct Linear",                "o",  "tab:blue"),
-    "direct_space_triadic":            ("Direct Space Triadic",         "s",  "tab:green"),
+    "direct_linear":                   ("Direct Space Linear",                "o",  "tab:blue"),
+    "direct_space_triadic":            ("Direct Space Triadic",          "s",  "tab:green"),
     "spectral_triadic":                ("Spectral Triadic",             "^",  "tab:orange"),
-    "spectral_triadic_trained_eigvec": ("Spectral Triadic (Train Eigv)", "D",  "tab:red"),
 }
 
 # ---------------------------------------------------------------------------
@@ -79,7 +82,7 @@ def plot_mean_sem(ax, data_lists, label, marker, color):
 def save_fig(fig, filename):
     out = os.path.join(BASE_DIR, filename)
     plt.tight_layout()
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=DPI)
     plt.close(fig)
     print(f"Saved: {out}")
 
@@ -116,12 +119,10 @@ METRIC_LABELS = {
 }
 
 def plot_epoch_curves(agg):
-    plt.rc("font", size=16)
     for metric, (title, ylabel) in METRIC_LABELS.items():
-        fig, ax = plt.subplots(figsize=(9, 6))
+        fig, ax = plt.subplots(figsize=FIGSIZE)
         for name, (label, marker, color) in MODELS.items():
             plot_mean_sem(ax, agg[name][metric], label, marker, color)
-        ax.set_title(title)
         ax.set_xlabel("Epoch")
         ax.set_ylabel(ylabel)
         if metric == "learning_rate":
@@ -193,6 +194,29 @@ def get_confidences(model, loader, device):
     return np.array(confs)
 
 
+def compute_ece(model, loader, device, n_bins=15):
+    """Expected Calibration Error over n_bins equal-width confidence bins."""
+    model.eval()
+    confidences, corrects = [], []
+    with torch.no_grad():
+        for images, labels in loader:
+            probs = torch.softmax(model(images.to(device)), dim=1)
+            conf, preds = torch.max(probs, dim=1)
+            confidences.extend(conf.cpu().numpy())
+            corrects.extend((preds == labels.to(device)).cpu().numpy())
+    confidences = np.array(confidences)
+    corrects    = np.array(corrects, dtype=float)
+    n           = len(confidences)
+    bin_edges   = np.linspace(0.0, 1.0, n_bins + 1)
+    ece = 0.0
+    for i in range(n_bins):
+        mask = (confidences > bin_edges[i]) & (confidences <= bin_edges[i + 1])
+        if mask.sum() == 0:
+            continue
+        ece += (mask.sum() / n) * abs(corrects[mask].mean() - confidences[mask].mean())
+    return ece
+
+
 # ---------------------------------------------------------------------------
 # Confidence histogram (one PNG, all 4 models)
 # ---------------------------------------------------------------------------
@@ -209,8 +233,7 @@ def plot_confidence_histogram(run_dir):
         batch_size=64, shuffle=False,
     )
 
-    plt.rc("font", size=16)
-    fig, ax = plt.subplots(figsize=(9, 6))
+    fig, ax = plt.subplots(figsize=FIGSIZE)
 
     any_plotted = False
     for name, (label, marker, color) in MODELS.items():
@@ -231,11 +254,100 @@ def plot_confidence_histogram(run_dir):
 
     ax.set_xlabel("Confidence (Max Softmax Probability)")
     ax.set_ylabel("Density (Log Scale)")
-    ax.set_title("Confidence Histogram on Fashion-MNIST Test Set")
     ax.set_yscale("log")
     ax.legend()
     ax.grid(True, alpha=0.3)
-    save_fig(fig, "confidence_histogram.png")
+    save_fig(fig, "test_confidence_histogram.png")
+
+
+# ---------------------------------------------------------------------------
+# ECE reliability diagram – binned accuracy vs confidence
+# ---------------------------------------------------------------------------
+
+def plot_ece(runs, n_bins=10):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.2860,), (0.3530,)),
+    ])
+    test_loader = DataLoader(
+        datasets.FashionMNIST(root="./data", train=False, download=True, transform=transform),
+        batch_size=64, shuffle=False,
+    )
+
+    bin_edges   = np.linspace(0.0, 1.0, n_bins + 1)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    # per_run_acc[name] = list of (n_bins,) arrays, one per run
+    per_run_acc = {name: [] for name in MODELS}
+    per_run_ece = {name: [] for name in MODELS}
+
+    for run in runs:
+        for name in MODELS:
+            pth = os.path.join(run, name, "model_final.pth")
+            if not os.path.exists(pth):
+                continue
+            model = MODEL_CLASSES[name]().to(device)
+            model.load_state_dict(torch.load(pth, map_location=device))
+            model.eval()
+
+            confidences, corrects = [], []
+            with torch.no_grad():
+                for images, labels in test_loader:
+                    probs = torch.softmax(model(images.to(device)), dim=1)
+                    conf, preds = torch.max(probs, dim=1)
+                    confidences.extend(conf.cpu().numpy())
+                    corrects.extend((preds == labels.to(device)).cpu().numpy())
+            confidences = np.array(confidences)
+            corrects    = np.array(corrects, dtype=float)
+            n           = len(confidences)
+
+            bin_accs = []
+            ece = 0.0
+            for i in range(n_bins):
+                mask = (confidences > bin_edges[i]) & (confidences <= bin_edges[i + 1])
+                if mask.sum() == 0:
+                    bin_accs.append(np.nan)
+                else:
+                    acc_b  = corrects[mask].mean()
+                    conf_b = confidences[mask].mean()
+                    bin_accs.append(acc_b)
+                    ece += (mask.sum() / n) * abs(acc_b - conf_b)
+            per_run_acc[name].append(bin_accs)
+            per_run_ece[name].append(ece)
+
+    names_with_data = [name for name in MODELS if per_run_acc[name]]
+    if not names_with_data:
+        print("Skipping ECE plot – no model weights found.")
+        return
+
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+
+    # Perfect‑calibration diagonal
+    ax.plot([0, 1], [0, 1], "k--", linewidth=1.2, label="Perfect calibration")
+
+    for name in names_with_data:
+        label, marker, color = MODELS[name]
+        acc_mat  = np.array(per_run_acc[name])   # (n_runs, n_bins)
+        ece_mean = np.mean(per_run_ece[name])
+        with warnings.catch_warnings(), np.errstate(all="ignore"):
+            warnings.simplefilter("ignore", RuntimeWarning)
+            mean_acc = np.nanmean(acc_mat, axis=0)
+            sem_acc  = np.nanstd(acc_mat, axis=0) / np.sqrt(acc_mat.shape[0])
+        ax.plot(bin_centers, mean_acc,
+                label=f"{label} (ECE={ece_mean:.3f})",
+                marker=marker, color=color, linewidth=1.5)
+        ax.fill_between(bin_centers, mean_acc - sem_acc, mean_acc + sem_acc,
+                        alpha=0.2, color=color)
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xticks(np.arange(0, 1.1, 0.1))
+    ax.set_xlabel("Confidence")
+    ax.set_ylabel("Accuracy")
+    ax.legend()
+    ax.grid(True, alpha=0.4)
+    save_fig(fig, "test_ece.png")
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +357,7 @@ def plot_confidence_histogram(run_dir):
 # ---------------------------------------------------------------------------
 
 def plot_calibration_delta(agg):
-    plt.rc("font", size=16)
-    fig, ax = plt.subplots(figsize=(9, 6))
+    fig, ax = plt.subplots(figsize=FIGSIZE)
 
     for name, (label, marker, color) in MODELS.items():
         acc_lists  = agg[name]["val_accuracy"]
@@ -275,12 +386,11 @@ def plot_calibration_delta(agg):
         ax.fill_between(epochs, mean - sem, mean + sem, alpha=0.2, color=color)
 
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
-    ax.set_title("Calibration Delta (Accuracy − Confidence)")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Δ = Accuracy − Confidence")
     ax.legend()
     ax.grid(True, alpha=0.4)
-    save_fig(fig, "calibration_delta.png")
+    save_fig(fig, "val_calibration_delta.png")
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +409,7 @@ def main():
     plot_epoch_curves(agg)
     plot_calibration_delta(agg)
     plot_confidence_histogram(run_dir=runs[0])
+    plot_ece(runs)
 
 
 if __name__ == "__main__":
