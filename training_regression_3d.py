@@ -28,7 +28,7 @@ summary(triadic_model, input_size=(1, dim))
 #%%
 training_kwargs = {"epochs": 1000, "learning_rate":1*1e-4,
                    "model_name": f"TriadicMLP_h{h_dim}_{func_name}", "save_dir": dir_to_save, "device": device}
-triadic_model = train_and_evaluate(triadic_model, train, test, **training_kwargs)
+# triadic_model = train_and_evaluate(triadic_model, train, test, **training_kwargs)
 #%%
 ## Evaluating the model
 model = triadic_model.to(device)
@@ -113,6 +113,26 @@ except AttributeError:
         vmax=float(max(z_test_plot.max(), z_pred_plot.max()))
     )
 
+# --- Calcolo livelli di contour comuni (nell'unità dei dati mostrati) ---
+cmin = float(min(np.nanmin(z_test_plot), np.nanmin(z_pred_plot)))
+cmax = float(max(np.nanmax(z_test_plot), np.nanmax(z_pred_plot)))
+# uso spacing non-lineare per concentrare i livelli vicino al minimo ("buche")
+power = 3.0  # >1 => più densità vicino a cmin; aumentare per enfatizzare ancora di più
+n_contours = 20
+u = np.linspace(0.0, 1.0, n_contours)
+contour_levels = cmin + (u ** power) * (cmax - cmin)
+# split per due set di linee: dense (nelle buche) e sparse (fuori)
+dense_frac = 0.65
+n_dense = max(3, int(n_contours * dense_frac))
+low_levels = contour_levels[:n_dense]
+high_levels = contour_levels[n_dense:]
+# prendi solo una linea su 'subsample' (es. 2 => una ogni 2)
+subsample = 2
+if len(low_levels) > 1:
+    low_levels = low_levels[::subsample]
+if len(high_levels) > 1:
+    high_levels = high_levels[::subsample]
+
 # figura: pannelli uguali + spazio riservato alla colorbar (a destra)
 fig, axs = plt.subplots(
     1, 2,
@@ -132,20 +152,36 @@ tcf0 = axs[0].tricontourf(
     tri, z_test_plot,
     levels=100, cmap="viridis", norm=norm
 )
-axs[0].set_xlabel(r"$x$", fontsize=22)
-axs[0].set_ylabel(r"$y$", fontsize=22, labelpad=8)
-axs[0].tick_params(labelsize=13)
-axs[0].set_title("Test", fontsize=22, pad=12)
+# sovrapponi linee di equipotenziale chiare per evidenziare le "buche"
+# linee dense e leggermente più spesse vicino al minimo
+if len(low_levels) > 0:
+    cs0_low = axs[0].tricontour(tri, z_test_plot, levels=low_levels, colors='white', linewidths=1.0, alpha=0.95)
+if len(high_levels) > 0:
+    cs0_high = axs[0].tricontour(tri, z_test_plot, levels=high_levels, colors='white', linewidths=0.45, alpha=0.6)
+# opzionale: etichette sui contour (commentare se ingombrano)
+#axs[0].clabel(cs0_low, fmt='%1.2f', fontsize=8, colors='white')
+
+axs[0].set_xlabel(r"$x$", fontsize=25)
+axs[0].set_ylabel(r"$y$", fontsize=25, labelpad=8)
+axs[0].tick_params(labelsize=16)
+axs[0].set_title("Test", fontsize=25, pad=12)
 
 # -------- SECONDO PANNELLO --------
 tcf1 = axs[1].tricontourf(
     tri, z_pred_plot,
     levels=100, cmap="viridis", norm=norm
 )
-axs[1].set_xlabel(r"$x$", fontsize=22)
-axs[1].set_ylabel(r"$y$", fontsize=22, labelpad=4)  # meno padding
-axs[1].tick_params(labelsize=13)
-axs[1].set_title("Recon.", fontsize=22, pad=12)
+# sovrapponi le stesse linee di equipotenziale (stesso insieme di livelli)
+if len(low_levels) > 0:
+    cs1_low = axs[1].tricontour(tri, z_pred_plot, levels=low_levels, colors='white', linewidths=1.0, alpha=0.95)
+if len(high_levels) > 0:
+    cs1_high = axs[1].tricontour(tri, z_pred_plot, levels=high_levels, colors='white', linewidths=0.45, alpha=0.6)
+#axs[1].clabel(cs1_low, fmt='%1.2f', fontsize=8, colors='white')
+
+axs[1].set_xlabel(r"$x$", fontsize=25)
+axs[1].set_ylabel(r"$y$", fontsize=25, labelpad=4)  # meno padding
+axs[1].tick_params(labelsize=16)
+axs[1].set_title("Recon.", fontsize=25, pad=12)
 
 # -------- COLORBAR --------
 pos1 = axs[1].get_position()
@@ -156,8 +192,8 @@ cbar_w   = 0.022
 cax = fig.add_axes([pos1.x1 + cbar_pad, pos1.y0, cbar_w, pos1.height])
 cbar = fig.colorbar(tcf1, cax=cax)
 cbar.ax.tick_params(labelsize=12)
-cbar.set_label(r"$x^4 + y^4 + 2x^2y^2 - 2x^2$", fontsize=18)
-# cbar.set_label(r"$\frac{1}{\sqrt{2\pi}\, \sigma} \exp\!\left(-\frac{1}{2}\left(\frac{mu}{\sigma}\right)^2\right)$", fontsize=18)
+cbar.set_label(r"$x^4 + y^4 + 2x^2y^2 - 2x^2$", fontsize=20)
+# cbar.set_label(r"$\\frac{1}{\\sqrt{2\\pi}\\, \\sigma} \\exp\\!\\left(-\\frac{1}{2}\\left(\\frac{mu}{\\sigma}\\right)^2\\right)$", fontsize=18)
 
 plt.show()
 
@@ -186,4 +222,3 @@ fig.savefig(f'Plots/{func_name}_hdim={h_dim}_nlayers={n_layers}.png')
 ## Compute the MSE on the test set
 mse = np.mean((z_test.squeeze() - z_pred.squeeze())**2)
 print(f"Test MSE: {mse:.6f}")
-
