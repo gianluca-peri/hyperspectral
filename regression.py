@@ -27,11 +27,7 @@ class SpectralTriadicMLP(nn.Module):
         super().__init__()
         self.model = nn.Sequential(
             SpectralTriadic(2, 20),
-            SpectralTriadic(20, 20),
-            SpectralTriadic(20, 20),
-            SpectralTriadic(20, 20),
-            SpectralTriadic(20, 20),
-            SpectralTriadic(20, 1),
+            SpectralTriadic(20, 1)
         )
 
     def forward(self, x):
