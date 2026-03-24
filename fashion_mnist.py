@@ -11,7 +11,7 @@ from lib.layers import SpectralTriadic, DirectSpaceTriadic
 from lib.utils import get_run_dir
 from lib.utils import save_history, save_final_test_evaluation, save_model
 from lib.utils import compute_dataset_mean_std
-from lib.train_and_evaluate import train_and_evaluate
+from lib.train_and_evaluate_classification import train_and_evaluate
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

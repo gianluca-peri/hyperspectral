@@ -3,6 +3,7 @@ mnist/
 fashion_mnist/
 cifar10/
 cifar10advanced/
+regression/
 Logs/
 lib/__pycache__/
 Old_Data/
