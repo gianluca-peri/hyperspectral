@@ -1,6 +1,7 @@
 import os
 import json
 import torch
+from torch.utils.data import DataLoader
 
 def get_run_dir(base_dir):
     """
@@ -61,4 +62,52 @@ def load_all_histories_of_a_model(base_dir, model_name):
             history = json.load(f)
             histories.append(history)
     return histories
+
+
+def compute_dataset_mean_std(dataset, batch_size=512):
+    """
+    Compute per-channel normalization statistics (mean, std).
+
+    Expected dataset sample format: (image, label), where image is a tensor
+    shaped (C, H, W) with values in [0, 1] (typically after ToTensor).
+
+    Method:
+    1) Sum pixel values per channel across the full dataset.
+    2) Sum squared pixel values per channel across the full dataset.
+    3) Use E[X] and E[X^2] to compute variance:
+       var = E[X^2] - (E[X])^2
+       std = sqrt(var)
+
+    Returns:
+    - mean: tuple[float, ...] (length = number of channels)
+    - std:  tuple[float, ...] (length = number of channels)
+    """
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    channel_sum = None
+    channel_sum_sq = None
+    num_pixels = 0
+
+    for images, _ in loader:
+        # images shape: (B, C, H, W)
+        batch_pixels = images.size(0) * images.size(2) * images.size(3)
+        num_pixels += batch_pixels
+
+        # Aggregate first and second moments per channel.
+        sum_per_channel = images.sum(dim=(0, 2, 3))
+        sum_sq_per_channel = (images * images).sum(dim=(0, 2, 3))
+
+        if channel_sum is None:
+            channel_sum = sum_per_channel
+            channel_sum_sq = sum_sq_per_channel
+        else:
+            channel_sum += sum_per_channel
+            channel_sum_sq += sum_sq_per_channel
+
+    # E[X] and E[X^2] over all pixels per channel.
+    mean = channel_sum / num_pixels
+    variance = channel_sum_sq / num_pixels - mean * mean
+    std = torch.sqrt(variance)
+
+    return tuple(mean.tolist()), tuple(std.tolist())
     

@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, random_split
 from lib.layers import SpectralTriadic, DirectSpaceTriadic
 from lib.utils import get_run_dir
 from lib.utils import save_history, save_final_test_evaluation, save_model
+from lib.utils import compute_dataset_mean_std
 from lib.train_and_evaluate import train_and_evaluate
 
 # Device configuration
@@ -57,9 +58,12 @@ class DirectSpaceTriadicPerceptron(nn.Module):
         return self.layer(x)
 
 # Data loading
+stats_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transforms.ToTensor())
+mean, std = compute_dataset_mean_std(stats_dataset)
+
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
+    transforms.Normalize(mean, std)
 ])
 
 full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)

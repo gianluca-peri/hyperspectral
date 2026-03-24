@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, random_split
 from lib.layers import SpectralTriadic
 from lib.utils import get_run_dir
 from lib.utils import save_history, save_final_test_evaluation, save_model
+from lib.utils import compute_dataset_mean_std
 from lib.train_and_evaluate import train_and_evaluate
 
 # Device configuration
@@ -66,16 +67,19 @@ class TriadicMLP(nn.Module):
         return x
 
 # Data loading for CIFAR-10 with standard augmentation: random crop + horizontal flip
+stats_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transforms.ToTensor())
+mean, std = compute_dataset_mean_std(stats_dataset)
+
 train_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
+    transforms.Normalize(mean, std)
 ])
 
 test_transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
+    transforms.Normalize(mean, std)
 ])
 
 # Load raw train dataset (no transform) to split indices, then create train/val subsets
