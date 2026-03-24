@@ -21,7 +21,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from utils.style import apply, FIGSIZE, DPI
+from utils.style import apply, FIGSIZE, DPI, fix_legend
 
 apply()
 
@@ -115,7 +115,7 @@ METRIC_LABELS = {
     "train_loss":         ("Training Loss",                 "Loss"),
     "val_loss":           ("Validation Loss",               "Loss"),
     "val_accuracy":       ("Validation Accuracy",           "Accuracy (%)"),
-    "val_avg_confidence": ("Validation Average Confidence", "Average Confidence"),
+    "val_avg_confidence": ("Validation Avg. Conf.", "Confidence"),
     "learning_rate":      ("Learning Rate",                 "Learning Rate"),
 }
 
@@ -134,7 +134,8 @@ def plot_epoch_curves(agg):
         ax.set_ylabel(ylabel)
         if metric == "learning_rate":
             ax.set_yscale("log")
-        ax.legend()
+        _loc = 'upper right' if metric in ('train_loss', 'val_loss') else 'lower right'
+        fix_legend(ax, loc=_loc)
         ax.grid(True, alpha=0.4)
         save_fig(fig, f"{metric}.png")
 
@@ -327,7 +328,7 @@ def plot_confidence_histogram(run_dir):
     ax.set_xlabel("Confidence (Max Softmax Probability)")
     ax.set_ylabel("Density (Log Scale)")
     ax.set_yscale("log")
-    ax.legend()
+    fix_legend(ax, loc='upper right')
     ax.grid(True, alpha=0.3)
     save_fig(fig, "test_confidence_histogram.png")
 
@@ -407,7 +408,7 @@ def plot_ece(runs, n_bins=10):
     ax.set_xticks(np.arange(0, 1.1, 0.1))
     ax.set_xlabel("Confidence")
     ax.set_ylabel("Accuracy")
-    ax.legend()
+    fix_legend(ax)
     ax.grid(True, alpha=0.4)
     save_fig(fig, "test_ece.png")
 
@@ -447,9 +448,48 @@ def plot_calibration_delta(agg):
     ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Δ = Accuracy − Confidence")
-    ax.legend()
+    fix_legend(ax)
     ax.grid(True, alpha=0.4)
     save_fig(fig, "val_calibration_delta.png")
+
+
+# ---------------------------------------------------------------------------
+# 3-panel summary figure (shared legend)
+# ---------------------------------------------------------------------------
+
+SUMMARY_PANELS = [
+    ("train_loss",   "Training Loss",      "Loss"),
+    ("val_loss",     "Validation Loss",    "Loss"),
+    ("val_accuracy", "Validation Accuracy", "Accuracy (%)"),
+]
+
+def plot_summary_grid(agg):
+    cell = FIGSIZE[0]
+    fig, axes = plt.subplots(1, 3, figsize=(cell * 3, cell))
+
+    for ax, (metric, title, ylabel) in zip(axes, SUMMARY_PANELS):
+        for name, (label, marker, color) in MODELS.items():
+            plot_mean_sem(ax, agg[name][metric], label, marker, color)
+        ax.set_title(title, pad=14)
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel(ylabel)
+        ax.grid(True, alpha=0.4)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        loc='lower center',
+        ncol=len(handles),
+        bbox_to_anchor=(0.5, -0.12),
+        frameon=True,
+        fontsize=matplotlib.rcParams.get('axes.labelsize', 34),
+    )
+
+    out = os.path.join(BASE_DIR, "summary.png")
+    plt.tight_layout(w_pad=2.0)
+    fig.savefig(out, dpi=DPI, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved: {out}")
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +506,7 @@ def main():
 
     agg = aggregate_all(runs)
     plot_epoch_curves(agg)
+    plot_summary_grid(agg)
     plot_calibration_delta(agg)
     plot_confidence_histogram(run_dir=runs[0])
     plot_ece(runs)
