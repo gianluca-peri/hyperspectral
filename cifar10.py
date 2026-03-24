@@ -2,29 +2,25 @@ import os
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
-import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
-from spectral.layers import SpectralTriadic
+from lib.layers import SpectralTriadic
+from lib.utils import get_run_dir
+from lib.utils import save_history, save_final_test_evaluation, save_model
+from lib.train_and_evaluate import train_and_evaluate
 
-def get_run_dir(base_dir="cifar10"):
-    """
-    Create a new run directory to save results.
-    Returns the path to the new run directory.
-    """
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
-    
-    i = 0
-    while True:
-        run_dir = os.path.join(base_dir, f"run_{i}")
-        if not os.path.exists(run_dir):
-            os.makedirs(run_dir)
-            return run_dir
-        i += 1
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+
+# Setup save directory
+run_dir = get_run_dir("cifar10")
+
+# Choice of criterion
+criterion = nn.CrossEntropyLoss()
 
 class MLP(nn.Module):
     def __init__(self):
@@ -49,6 +45,7 @@ class MLP(nn.Module):
         x = self.layer3(x)
         return x
 
+
 class TriadicMLP(nn.Module):
     def __init__(self):
         super().__init__()
@@ -68,177 +65,70 @@ class TriadicMLP(nn.Module):
         x = self.layer3(x)
         return x
 
+# Data loading for CIFAR-10 with standard augmentation: random crop + horizontal flip
+train_transform = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
+])
 
-def train_and_evaluate(model, model_name, run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate, weighted_decay=1e-2):
-    print(f"\nStarting training for {model_name}")
-    model_dir = os.path.join(run_dir, model_name)
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
-        
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weighted_decay)
-    # LR scheduler: halve LR if no val loss improvement for 5 epochs
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
-    
-    history = {
-        "train_loss": [],
-        "val_loss": [],
-        "val_accuracy": [],
-        "val_avg_confidence": [],
-        "test_accuracy": 0.0,
-        "test_loss": 0.0
-    }
-    
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-            
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item()
-        
-        avg_train_loss = running_loss / len(train_loader)
-        
-        # Validation
-        model.eval()
-        val_loss = 0.0
-        correct = 0
-        total = 0
-        total_confidence = 0.0
-        with torch.no_grad():
-            for images, labels in val_loader:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
-                val_loss += loss.item()
-                
-                # Calculate probabilities using softmax
-                probs = torch.softmax(outputs, dim=1)
-                # Get the highest probability (confidence) and the predicted class
-                confidence, predicted = torch.max(probs, 1)
-                
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-                total_confidence += confidence.sum().item()
-        
-        avg_val_loss = val_loss / len(val_loader)
-        # Scheduler step
-        scheduler.step(avg_val_loss)
-        current_lr = optimizer.param_groups[0]['lr']
-        
-        val_acc = 100 * correct / total
-        avg_val_confidence = total_confidence / total
-        
-        print(f"[{model_name}] Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.2f}%, Val Avg Conf: {avg_val_confidence:.4f}, LR: {current_lr:.6f}")
-        
-        history["train_loss"].append(avg_train_loss)
-        history["val_loss"].append(avg_val_loss)
-        history["val_accuracy"].append(val_acc)
-        history["val_avg_confidence"].append(avg_val_confidence)
-        
-        # Save per epoch
-        with open(os.path.join(model_dir, "history.json"), "w") as f:
-            json.dump(history, f, indent=4)
+test_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
+])
 
-    # Test
-    model.eval()
-    test_loss = 0.0
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for images, labels in test_loader:
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            test_loss += loss.item()
-            
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+# Load raw train dataset (no transform) to split indices, then create train/val subsets
+full_train_raw = datasets.CIFAR10(root='./data', train=True, download=True)
+test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
 
-    avg_test_loss = test_loss / len(test_loader)
-    test_acc = 100 * correct / total
+# Split train into train and validation (40000 train, 10000 val)
+train_size = 40000
+val_size = 10000
+train_subset, val_subset = random_split(full_train_raw, [train_size, val_size])
 
-    print(f"[{model_name}] Test Loss: {avg_test_loss:.4f}, Test Acc: {test_acc:.2f}%")
+# Create datasets with proper transforms using the split indices
+train_dataset = torch.utils.data.Subset(
+    datasets.CIFAR10(root='./data', train=True, download=False, transform=train_transform),
+    train_subset.indices
+)
+val_dataset = torch.utils.data.Subset(
+    datasets.CIFAR10(root='./data', train=True, download=False, transform=test_transform),
+    val_subset.indices
+)
 
-    history["test_loss"] = avg_test_loss
-    history["test_accuracy"] = test_acc
+train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
 
-    with open(os.path.join(model_dir, "history.json"), "w") as f:
-        json.dump(history, f, indent=4)
-        
-    torch.save(model.state_dict(), os.path.join(model_dir, "model_final.pth"))
+models = [
+    (TriadicMLP().to(device), "spectral_triadic_mlp"),
+    (MLP().to(device), "direct_mlp")
+]
 
-def main():
-    # Hyperparameters
-    batch_size = 128
-    learning_rate = 1e-2
-    weight_decay = 1e-3
-    epochs = 100
+learning_rate = 1e-2
+weight_decay = 1e-3
+epochs = 100
+for model, name in models:
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    # DataLoader workers (adjust for faster loading)
-    num_workers = 4
-    pin_memory = True if torch.cuda.is_available() else False
-    print(f"DataLoader workers: {num_workers}, pin_memory: {pin_memory}")
-
-    # Device configuration
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-
-    # Data loading for CIFAR-10 with standard augmentation: random crop + horizontal flip
-    train_transform = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
-    ])
-
-    test_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))
-    ])
-
-    # Load raw train dataset (no transform) to split indices, then create train/val subsets
-    full_train_raw = datasets.CIFAR10(root='./data', train=True, download=True)
-    test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=test_transform)
-
-    # Split train into train and validation (40000 train, 10000 val)
-    train_size = 40000
-    val_size = 10000
-    train_subset, val_subset = random_split(full_train_raw, [train_size, val_size])
-
-    # Create datasets with proper transforms using the split indices
-    train_dataset = torch.utils.data.Subset(
-        datasets.CIFAR10(root='./data', train=True, download=False, transform=train_transform),
-        train_subset.indices
-    )
-    val_dataset = torch.utils.data.Subset(
-        datasets.CIFAR10(root='./data', train=True, download=False, transform=test_transform),
-        val_subset.indices
+    scheduler_plateau = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=5
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+    history, final_test_evaluation, model = train_and_evaluate(
+        model,
+        train_loader,
+        val_loader,
+        test_loader,
+        criterion,
+        optimizer,
+        epochs,
+        device,
+        scheduler_plateau=scheduler_plateau,
+        verbose=True
+    )
 
-    # Setup save directory
-    run_dir = get_run_dir()
-    print(f"Saving results to {run_dir}")
-
-    # Train Triadic Perceptron
-    triadic_model = TriadicMLP().to(device)
-    train_and_evaluate(triadic_model, "spectral triadic mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate, weight_decay)
-
-    # Train Linear Perceptron
-    direct_model = MLP().to(device)
-    train_and_evaluate(direct_model, "direct mlp", run_dir, train_loader, val_loader, test_loader, device, epochs, learning_rate, weight_decay)
-
-
-if __name__ == '__main__':
-    main()
+    save_history(run_dir, name, history)
+    save_final_test_evaluation(run_dir, name, final_test_evaluation)
+    save_model(run_dir, name, model)

@@ -6,7 +6,9 @@ if [ "$#" -ne 1 ]; then
 fi
 
 PYTHON_SCRIPT=$1
-LOGFILE="${PYTHON_SCRIPT%.py}.log"
+LOG_DIR="Logs"
+mkdir -p "$LOG_DIR"
+LOGFILE="$LOG_DIR/${PYTHON_SCRIPT%.py}.log"
 
 # Run in background with nohup, capture both stdout and stderr into one log, save PID
 nohup python3 -u "$PYTHON_SCRIPT" >"$LOGFILE" 2>&1 &
