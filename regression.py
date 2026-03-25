@@ -8,8 +8,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from lib.layers import SpectralTriadic
 from lib.utils import get_run_dir
-from lib.utils import save_history, save_final_test_evaluation, save_model
-from lib.train_and_evaluate_regression import train_and_evaluate_regression
+from lib.utils import save_history, save_final_test_evaluation, save_model, save_regression_reconstruction
+from lib.train_and_evaluate_regression import train_and_evaluate_regression, reconstruction
 
 # Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -95,6 +95,12 @@ history, final_test_evaluation, model = train_and_evaluate_regression(
     verbose=True,
 )
 
+# Save results
 save_history(run_dir, model_name, history)
 save_final_test_evaluation(run_dir, model_name, final_test_evaluation)
 save_model(run_dir, model_name, model)
+
+# Build reconstruction data and save
+inputs, true_profile, reconstructions = reconstruction(test_loader, model, device)
+save_regression_reconstruction(run_dir, model_name, inputs, true_profile, reconstructions)
+

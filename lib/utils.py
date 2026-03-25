@@ -110,4 +110,17 @@ def compute_dataset_mean_std(dataset, batch_size=512):
     std = torch.sqrt(variance)
 
     return tuple(mean.tolist()), tuple(std.tolist())
+
+def save_regression_reconstruction(run_dir, model_name, inputs, targets, reconstructions):
+    """
+    Save the inputs, targets, and reconstructions for regression tasks to a JSON file.
+    """
+    os.makedirs(os.path.join(run_dir, model_name), exist_ok=True)
+    data = {
+        "inputs": inputs.tolist(),
+        "targets": targets.tolist(),
+        "reconstructions": reconstructions.tolist()
+    }
+    with open(os.path.join(run_dir, model_name, "regression_reconstruction.json"), "w") as f:
+        json.dump(data, f)
     

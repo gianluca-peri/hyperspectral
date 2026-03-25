@@ -1,5 +1,6 @@
 import time
 import torch
+import numpy as np
 
 
 def train_one_epoch(model, train_loader, criterion, optimizer, device):
@@ -138,3 +139,21 @@ def train_and_evaluate_regression(
     final_test_evaluation["test_mae"] = test_mae
 
     return history, final_test_evaluation, model
+
+def reconstruction(test_loader, model, device):
+    model.eval()
+    reconstructions = []
+    true_profile = []
+
+    with torch.no_grad():
+        for inputs, target in test_loader:
+            inputs = inputs.to(device)
+            outputs = model(inputs)
+            reconstructions.append(outputs.cpu().numpy())
+            true_profile.append(target.cpu().numpy())
+        
+    reconstructions = np.concatenate(reconstructions, axis=0)
+    true_profile = np.concatenate(true_profile, axis=0)
+    inputs = np.concatenate([inputs.cpu().numpy() for inputs, _ in test_loader], axis=0)
+
+    return inputs, true_profile, reconstructions
